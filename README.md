@@ -84,6 +84,25 @@ Step 기반으로 작업을 분해하고, 세션이 끝나도 다른 AI 코딩�
 
 의미는 Claude와 같다.
 
+### Antigravity (IDE 통합 에이전트)
+
+Antigravity는 IDE나 에디터 내부에 통합된 AI 어시스턴트로, 터미널 기반의 단독 도구인 **Gemini CLI와는 동작 방식이 다릅니다.**
+
+> **Note: Gemini CLI와의 차이점**
+> Gemini CLI는 `.gemini/commands/*.toml`을 파싱하여 `/harness` 같은 슬래시 커맨드를 시스템 자체에 등록하지만, Antigravity는 전역 설정(`~/.gemini/antigravity/` 하위)을 우선적으로 로드하므로 리포지토리 로컬의 커스텀 `.toml` 설정이 자동완성 UI 커맨드로 즉시 노출되지는 않습니다.
+
+하지만 시스템 UI에만 노출되지 않을 뿐, 이미 `AGENTS.md`와 `GEMINI.md` 규칙을 이해하고 있으므로 채팅창에 아래와 같이 입력하면 완벽하게 동일한 워크플로우를 수행할 수 있습니다.
+
+```text
+/harness
+/review
+```
+또는 자연어로:
+```text
+harness 워크플로우 진행해줘
+리뷰 워크플로우를 따라 현재 코드 리뷰해줘
+```
+
 ### Kimi Code CLI
 
 Kimi는 project-level skills를 자동 발견하는 방식이 가장 자연스럽다.
