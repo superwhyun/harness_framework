@@ -1,0 +1,14 @@
+description = "Run the project harness workflow using the canonical docs."
+prompt = """
+Read the project instructions and run the harness workflow.
+
+Start with:
+- @{AGENTS.md}
+- @{docs/HARNESS.md}
+- @{docs/PRD.md}
+- @{docs/ARCHITECTURE.md}
+- @{docs/ADR.md}
+
+If there is an active phase, inspect the current files under `phases/` and continue from the first pending step.
+If the user appended extra arguments to this command, treat them as additional instructions.
+"""

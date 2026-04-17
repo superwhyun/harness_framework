@@ -1,0 +1,13 @@
+description = "Review changes using the project's canonical review workflow."
+prompt = """
+Review the current changes using the project review workflow.
+
+Start with:
+- @{AGENTS.md}
+- @{docs/REVIEW.md}
+- @{docs/ARCHITECTURE.md}
+- @{docs/ADR.md}
+
+Then inspect the current diff and produce findings-first review output.
+If the user appended extra arguments to this command, treat them as additional review scope.
+"""
