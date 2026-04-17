@@ -1,0 +1,50 @@
+{
+  "default_backend": "claude",
+  "backends": {
+    "claude": {
+      "command": [
+        "claude",
+        "-p",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "json",
+        "{prompt}"
+      ],
+      "guardrail_files": [
+        "CLAUDE.md"
+      ]
+    },
+    "codex": {
+      "command": [
+        "codex",
+        "exec",
+        "--json",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "{prompt}"
+      ],
+      "guardrail_files": []
+    },
+    "gemini": {
+      "command": [
+        "gemini",
+        "--approval-mode",
+        "yolo",
+        "--output-format",
+        "json",
+        "{prompt}"
+      ],
+      "guardrail_files": []
+    },
+    "kimi": {
+      "command": [
+        "kimi",
+        "--print",
+        "--output-format",
+        "stream-json",
+        "-p",
+        "{prompt}"
+      ],
+      "guardrail_files": []
+    }
+  }
+}

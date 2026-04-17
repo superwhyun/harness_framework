@@ -28,8 +28,11 @@ def tmp_project(tmp_path):
     phases_dir = tmp_path / "phases"
     phases_dir.mkdir()
 
+    agents_md = tmp_path / "AGENTS.md"
+    agents_md.write_text("# Shared Rules\n- shared rule")
+
     claude_md = tmp_path / "CLAUDE.md"
-    claude_md.write_text("# Rules\n- rule one\n- rule two")
+    claude_md.write_text("# Claude Rules\n- claude rule")
 
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
@@ -149,8 +152,10 @@ class TestLoadGuardrails:
     def test_loads_claude_md_and_docs(self, executor, tmp_project):
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
-        assert "# Rules" in result
-        assert "rule one" in result
+        assert "# Shared Rules" in result
+        assert "shared rule" in result
+        assert "# Claude Rules" in result
+        assert "claude rule" in result
         assert "# Architecture" in result
         assert "# Guide" in result
 
@@ -170,7 +175,8 @@ class TestLoadGuardrails:
         (tmp_project / "CLAUDE.md").unlink()
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
-        assert "CLAUDE.md" not in result
+        assert "Claude Rules" not in result
+        assert "Shared Rules" in result
         assert "Architecture" in result
 
     def test_no_docs_dir(self, executor, tmp_project):
@@ -178,7 +184,7 @@ class TestLoadGuardrails:
         shutil.rmtree(tmp_project / "docs")
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
-        assert "Rules" in result
+        assert "Shared Rules" in result
         assert "Architecture" not in result
 
     def test_empty_project(self, tmp_path):
@@ -270,6 +276,39 @@ class TestBuildPreamble:
     def test_includes_index_path(self, executor):
         result = executor._build_preamble("", "")
         assert "/phases/0-mvp/index.json" in result
+
+    def test_includes_handoff_fields(self, executor):
+        result = executor._build_preamble("", "")
+        assert "completed_work" in result
+        assert "next_actions" in result
+        assert "resume_hint" in result
+
+
+# ---------------------------------------------------------------------------
+# _build_resume_context
+# ---------------------------------------------------------------------------
+
+class TestBuildResumeContext:
+    def test_includes_previous_step_output(self, executor):
+        payload = {
+            "summary": "API layer completed",
+            "files_changed": ["src/api.py"],
+            "next_actions": ["Wire API into service layer"],
+        }
+        (executor._phase_dir / "step1-output.json").write_text(json.dumps(payload, ensure_ascii=False))
+        index = ex.StepExecutor._read_json(executor._index_file)
+
+        result = executor._build_resume_context(index, 2)
+
+        assert "이전 세션 handoff" in result
+        assert "API layer completed" in result
+        assert "src/api.py" in result
+        assert "Wire API into service layer" in result
+
+    def test_returns_empty_without_previous_output(self, executor):
+        index = ex.StepExecutor._read_json(executor._index_file)
+        result = executor._build_resume_context(index, 0)
+        assert result == ""
 
 
 # ---------------------------------------------------------------------------
@@ -420,32 +459,34 @@ class TestCommitStep:
 
 
 # ---------------------------------------------------------------------------
-# _invoke_claude (mocked)
+# backend invocation (mocked)
 # ---------------------------------------------------------------------------
 
-class TestInvokeClaude:
-    def test_invokes_claude_with_correct_args(self, executor):
+class TestInvokeBackend:
+    def test_invokes_default_backend_with_correct_args(self, executor):
         mock_result = MagicMock(returncode=0, stdout='{"result": "ok"}', stderr="")
         step = {"step": 2, "name": "ui"}
         preamble = "PREAMBLE\n"
 
         with patch("subprocess.run", return_value=mock_result) as mock_run:
-            output = executor._invoke_claude(step, preamble)
+            output = executor._invoke_backend(step, preamble)
 
-        cmd = mock_run.call_args[0][0]
+        backend_call = next(call for call in mock_run.call_args_list if call[0][0][0] == "claude")
+        cmd = backend_call[0][0]
         assert cmd[0] == "claude"
         assert "-p" in cmd
         assert "--dangerously-skip-permissions" in cmd
         assert "--output-format" in cmd
         assert "PREAMBLE" in cmd[-1]
         assert "UI를 구현하세요" in cmd[-1]
+        assert output["backend"] == "claude"
 
     def test_saves_output_json(self, executor):
         mock_result = MagicMock(returncode=0, stdout='{"ok": true}', stderr="")
         step = {"step": 2, "name": "ui"}
 
         with patch("subprocess.run", return_value=mock_result):
-            executor._invoke_claude(step, "preamble")
+            executor._invoke_backend(step, "preamble")
 
         output_file = executor._phase_dir / "step2-output.json"
         assert output_file.exists()
@@ -453,11 +494,15 @@ class TestInvokeClaude:
         assert data["step"] == 2
         assert data["name"] == "ui"
         assert data["exitCode"] == 0
+        assert data["backend"] == "claude"
+        assert data["status"] == "pending"
+        assert "files_changed" in data
+        assert "git" in data
 
     def test_nonexistent_step_file_exits(self, executor):
         step = {"step": 99, "name": "nonexistent"}
         with pytest.raises(SystemExit) as exc_info:
-            executor._invoke_claude(step, "preamble")
+            executor._invoke_backend(step, "preamble")
         assert exc_info.value.code == 1
 
     def test_timeout_is_1800(self, executor):
@@ -465,9 +510,64 @@ class TestInvokeClaude:
         step = {"step": 2, "name": "ui"}
 
         with patch("subprocess.run", return_value=mock_result) as mock_run:
-            executor._invoke_claude(step, "preamble")
+            executor._invoke_backend(step, "preamble")
 
-        assert mock_run.call_args[1]["timeout"] == 1800
+        backend_call = next(call for call in mock_run.call_args_list if call[0][0][0] == "claude")
+        assert backend_call[1]["timeout"] == 1800
+
+    def test_uses_custom_backend_from_harness_config(self, tmp_project, phase_dir):
+        harness = {
+            "default_backend": "codex",
+            "backends": {
+                "codex": {
+                    "command": ["codex", "exec", "--json", "{prompt}"],
+                    "guardrail_files": []
+                }
+            }
+        }
+        (tmp_project / "harness.json").write_text(json.dumps(harness))
+
+        with patch.object(ex, "ROOT", tmp_project):
+            executor = ex.StepExecutor("0-mvp")
+        executor._root = str(tmp_project)
+        executor._phases_dir = tmp_project / "phases"
+        executor._phase_dir = phase_dir
+        executor._phase_dir_name = "0-mvp"
+        executor._index_file = phase_dir / "index.json"
+        executor._top_index_file = tmp_project / "phases" / "index.json"
+
+        mock_result = MagicMock(returncode=0, stdout="{}", stderr="")
+        step = {"step": 2, "name": "ui"}
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            output = executor._invoke_backend(step, "preamble")
+
+        backend_call = next(call for call in mock_run.call_args_list if call[0][0][0] == "codex")
+        cmd = backend_call[0][0]
+        assert cmd[:3] == ["codex", "exec", "--json"]
+        assert output["backend"] == "codex"
+
+    def test_supports_builtin_kimi_backend(self, tmp_project, phase_dir):
+        with patch.object(ex, "ROOT", tmp_project):
+            executor = ex.StepExecutor("0-mvp", backend_name="kimi")
+        executor._root = str(tmp_project)
+        executor._phases_dir = tmp_project / "phases"
+        executor._phase_dir = phase_dir
+        executor._phase_dir_name = "0-mvp"
+        executor._index_file = phase_dir / "index.json"
+        executor._top_index_file = tmp_project / "phases" / "index.json"
+
+        mock_result = MagicMock(returncode=0, stdout='{"role":"assistant","content":"ok"}', stderr="")
+        step = {"step": 2, "name": "ui"}
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            output = executor._invoke_backend(step, "preamble")
+
+        backend_call = next(call for call in mock_run.call_args_list if call[0][0][0] == "kimi")
+        cmd = backend_call[0][0]
+        assert cmd[:4] == ["kimi", "--print", "--output-format", "stream-json"]
+        assert "-p" in cmd
+        assert output["backend"] == "kimi"
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +613,29 @@ class TestMainCli:
                 with pytest.raises(SystemExit) as exc_info:
                     ex.main()
                 assert exc_info.value.code == 1
+
+    def test_backend_option_is_forwarded(self, tmp_project):
+        harness = {
+            "default_backend": "claude",
+            "backends": {
+                "codex": {
+                    "command": ["codex", "exec", "--json", "{prompt}"],
+                    "guardrail_files": []
+                }
+            }
+        }
+        (tmp_project / "harness.json").write_text(json.dumps(harness))
+        phase_dir = tmp_project / "phases" / "0-mvp"
+        phase_dir.mkdir(parents=True)
+        (phase_dir / "index.json").write_text(json.dumps({"project": "T", "phase": "mvp", "steps": []}))
+
+        with patch("sys.argv", ["execute.py", "0-mvp", "--backend", "codex"]):
+            with patch.object(ex, "ROOT", tmp_project):
+                with patch.object(ex.StepExecutor, "run", autospec=True) as mock_run:
+                    ex.main()
+
+        self_obj = mock_run.call_args[0][0]
+        assert self_obj._backend.name == "codex"
 
 
 # ---------------------------------------------------------------------------
