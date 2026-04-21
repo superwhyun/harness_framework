@@ -63,6 +63,8 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 - 각 step은 독립 세션에서도 이해 가능해야 한다.
 - step 안에는 읽을 파일, 구현 범위, 검증 명령, 금지사항이 있어야 한다.
 - AC는 실제 실행 가능한 명령으로 쓴다.
+- 새 phase를 만들 때는 `templates/` 와 `scripts/scaffold_phase.py` 를 우선 사용해 형식을 맞춘다.
+- phase 파일을 생성하거나 크게 수정한 뒤에는 `scripts/validate_phase.py` 로 형식을 검증하는 편이 좋다.
 
 ### 3. 실행
 

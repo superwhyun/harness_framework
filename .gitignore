@@ -1,9 +1,37 @@
-node_modules/
-.next/
-out/
-next-env.d.ts
-tsconfig.tsbuildinfo
+# Python & System
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.DS_Store
 
-# phase execution outputs
-phases/**/phase*-output.json
-phases/**/step*-output.json
+# Harness Runtime Data (Project Specific)
+phases/*/
+phases/index.json
+data/
+logs/
+tmp/
+
+# Project Identity Documents
+# (Harness will regenerate these for new projects)
+docs/PRD.md
+docs/ARCHITECTURE.md
+docs/ADR.md
+docs/UI_GUIDE.md
+docs/service-scenario-catalog.md
+
+# Generated Artifacts & Reports
+*-output.json
+*.artifact.md
+final_integration_report.json
+test_report.json
+log_report.json
+
+# Harness Config
+harness.json
+
+# --- Harness Framework Standard (Must be tracked) ---
+!AGENTS.md
+!docs/HARNESS.md
+!docs/REVIEW.md
+!.claude/settings.json
+!.gemini/settings.json

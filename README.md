@@ -191,6 +191,13 @@ docs/HARNESS.md 기준으로 harness workflow를 따라
 - "이전 대화에서 말했듯" 같은 표현은 쓰지 않는다.
 - AC는 실제 실행 가능한 명령으로 쓴다.
 
+자동 생성을 표준화하고 싶으면 아래를 사용할 수 있다.
+
+```bash
+python3 scripts/scaffold_phase.py 0-mvp --project ExampleProject --phase-name mvp --steps project-setup core-types api-layer
+python3 scripts/validate_phase.py 0-mvp
+```
+
 ### 3. 진행
 
 AI 툴은 현재 `phases/{task}/index.json` 에서 첫 `pending` step을 찾고, 해당 step을 수행한다.
@@ -285,6 +292,25 @@ python3 scripts/execute.py 0-mvp --backend codex --push
 ```
 
 원하면 각 backend 명령을 프로젝트 상황에 맞게 바꿀 수 있다.
+
+## backend smoke check
+
+mock 테스트 외에 실제 설치된 CLI의 help surface를 검증하려면 아래를 실행한다.
+
+```bash
+python3 scripts/smoke_backends.py
+```
+
+이 스크립트는 아래를 실제로 확인한다.
+
+- `claude --help`
+- `codex exec --help`
+- `gemini --help`
+- `kimi --help`
+- `ollama --help`
+- `lms --help` (LM Studio CLI)
+
+즉, 문서상 지원이 아니라 현재 머신의 실제 CLI가 우리가 기대하는 플래그 surface를 유지하는지 확인하는 용도다.
 
 ## 디렉터리 구조
 
