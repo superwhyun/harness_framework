@@ -396,3 +396,11 @@ class StepExecutor:
         index["completed_at"] = self._stamp()
         self._write_json(self._index_file, index)
         print(f"\n  ✓ Phase '{self._phase_name}' completed!")
+
+        if self._auto_push:
+            branch = f"feat-{self._phase_name}"
+            r = self._run_git("push", "-u", "origin", branch)
+            if r.returncode == 0:
+                print(f"  ✓ Pushed branch {branch} to origin")
+            else:
+                print(f"  ⚠ Push failed: {r.stderr.strip()}")
