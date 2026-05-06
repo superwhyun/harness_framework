@@ -47,7 +47,7 @@ class StepExecutor:
     MAX_RETRIES = 3
     COMMAND_TIMEOUT = 1800
     FEAT_MSG = "feat({phase}): step {num} — {name}"
-    CHORE_MSG = "chore({phase}): step {num} output"
+    # CHORE_MSG removed: step output is committed together with the step work under FEAT_MSG
     TZ = timezone(timedelta(hours=9))
     DEFAULT_BACKEND = "claude"
     
@@ -303,6 +303,14 @@ class StepExecutor:
             f"   {commit_example}\n\n---\n\n"
         )
 
+    @staticmethod
+    def _extract_error(result) -> str:
+        if result.stderr.strip():
+            return result.stderr.strip()[:500]
+        if result.stdout.strip():
+            return result.stdout.strip()[:500]
+        return f"Step did not complete (exit code {result.exit_code}). No output captured."
+
     def _write_step_output(
         self,
         step_num: int,
@@ -373,7 +381,7 @@ class StepExecutor:
                 print(f"  ✗ Step {step_num} failed after {self.MAX_RETRIES} attempts.")
                 sys.exit(1)
             
-            prev_error = "에러 메시지를 index.json에서 읽어오지 못했습니다." # Placeholder for now
+            prev_error = self._extract_error(result)
 
     def _execute_all_steps(self, guardrails: str):
         while True:
@@ -403,6 +411,7 @@ class StepExecutor:
         index = self._read_json(self._index_file)
         index["completed_at"] = self._stamp()
         self._write_json(self._index_file, index)
+        self._update_top_index()
         print(f"\n  ✓ Phase '{self._phase_name}' completed!")
 
         if self._auto_push:
@@ -412,3 +421,18 @@ class StepExecutor:
                 print(f"  ✓ Pushed branch {branch} to origin")
             else:
                 print(f"  ⚠ Push failed: {r.stderr.strip()}")
+
+    def _update_top_index(self):
+        top_path = self._top_index_file
+        if not top_path.exists():
+            return
+        try:
+            top_index = self._read_json(top_path)
+            phases = top_index.get("phases", [])
+            for item in phases:
+                if item.get("dir") == self._phase_dir_name:
+                    item["status"] = "completed"
+                    break
+            self._write_json(top_path, top_index)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"  WARN: could not update top index: {exc}")
