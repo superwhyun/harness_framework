@@ -314,6 +314,20 @@ python3 scripts/execute.py 0-mvp --backend codex --push
 
 원하면 각 backend 명령을 프로젝트 상황에 맞게 바꿀 수 있다.
 
+### 보안 설정 (dangerous_mode)
+
+기본적으로 하네스는 보수적인 모드로 실행된다. 각 백엔드의 dangerous 플래그(`--dangerously-skip-permissions`, `--approval-mode yolo` 등)는 **기본값에서 제외**되어 있다.
+
+CI나 배치 자동화에서 이러한 플래그가 필요한 경우, `harness.json`에 아래를 추가한다.
+
+```json
+{
+  "dangerous_mode": true
+}
+```
+
+`dangerous_mode: true`일 때만 기존의 aggressive 플래그가 복원된다. 이 설정 없이는 각 백엔드가 기본 권한 모드로 실행된다.
+
 ## backend smoke check
 
 mock 테스트 외에 실제 설치된 CLI의 help surface를 검증하려면 아래를 실행한다.

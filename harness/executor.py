@@ -50,7 +50,28 @@ class StepExecutor:
     TZ = timezone(timedelta(hours=9))
     DEFAULT_BACKEND = "claude"
 
+    # Safe default backends (no dangerous flags)
     DEFAULT_BACKENDS = {
+        "claude": {
+            "command": ["claude", "-p", "--output-format", "json", "{prompt}"],
+            "guardrail_files": ["CLAUDE.md"],
+        },
+        "codex": {
+            "command": ["codex", "exec", "--json", "{prompt}"],
+            "guardrail_files": [],
+        },
+        "gemini": {
+            "command": ["gemini", "--output-format", "json", "{prompt}"],
+            "guardrail_files": [],
+        },
+        "kimi": {
+            "command": ["kimi", "--output-format", "stream-json", "-p", "{prompt}"],
+            "guardrail_files": [],
+        },
+    }
+
+    # Dangerous backends (used when harness.json has dangerous_mode: true)
+    DANGEROUS_BACKENDS = {
         "claude": {
             "command": ["claude", "-p", "--dangerously-skip-permissions", "--output-format", "json", "{prompt}"],
             "guardrail_files": ["CLAUDE.md"],
@@ -157,7 +178,10 @@ class StepExecutor:
         )
 
     def _get_backend_configs(self) -> dict:
-        configs = self.DEFAULT_BACKENDS.copy()
+        if self._harness_settings.get("dangerous_mode", False):
+            configs = self.DANGEROUS_BACKENDS.copy()
+        else:
+            configs = self.DEFAULT_BACKENDS.copy()
         custom_backends = self._harness_settings.get("backends", {})
         for name, data in custom_backends.items():
             if "command" in data:
