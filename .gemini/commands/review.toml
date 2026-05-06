@@ -9,5 +9,9 @@ Start with:
 - @{docs/ADR.md}
 
 Then inspect the current diff and produce findings-first review output.
+Target project resolution:
+- Use a project path appended by the user when present.
+- Otherwise read `.harness/current_project`.
+- If neither exists or the value is empty, ask the user for the target project path.
 If the user appended extra arguments to this command, treat them as additional review scope.
 """

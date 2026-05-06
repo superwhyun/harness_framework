@@ -44,7 +44,16 @@ def render_template(template: str, values: dict[str, str]) -> str:
     return rendered
 
 
-def scaffold_phase(root: Path, phase_dir_name: str, project: str, phase_name: str, step_names: list[str], *, force: bool = False):
+def scaffold_phase(
+    root: Path,
+    phase_dir_name: str,
+    project: str,
+    phase_name: str,
+    step_names: list[str],
+    *,
+    template_root: Path | None = None,
+    force: bool = False,
+):
     phases_dir = root / "phases"
     phases_dir.mkdir(parents=True, exist_ok=True)
     phase_dir = phases_dir / phase_dir_name
@@ -68,7 +77,7 @@ def scaffold_phase(root: Path, phase_dir_name: str, project: str, phase_name: st
     }
     write_json_file(phase_dir / "index.json", phase_index)
 
-    step_template = load_template(root, "step.md.tmpl")
+    step_template = load_template(template_root or root, "step.md.tmpl")
     for index, step_name in enumerate(step_names):
         step_path = phase_dir / f"step{index}.md"
         if step_path.exists() and not force:

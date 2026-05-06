@@ -39,13 +39,26 @@ Step 기반으로 작업을 분해하고, 세션이 끝나도 다른 AI 코딩�
 
 정상적인 사용 방식은 아래다.
 
-- 리포를 AI 코딩툴에서 연다.
+- `harness_framework` 리포를 AI 코딩툴에서 연다.
+- 실제 산출 프로젝트는 `projects/{project}` 아래의 독립 Git 저장소로 둔다.
 - 툴이 프로젝트 규칙 파일을 자동 로드한다.
-- 현재 `phases/` 상태를 읽고 첫 `pending` step부터 진행한다.
+- 대상 프로젝트의 `phases/` 상태를 읽고 첫 `pending` step부터 진행한다.
 - 세션 종료 시 `stepN-output.json` 에 handoff를 남긴다.
 - 다음 세션에서 다른 툴이 그 handoff를 읽고 이어서 작업한다.
 
 즉, `scripts/execute.py` 는 선택적 배치 실행기이고, 메인 진입점은 각 툴의 프로젝트 규칙/명령이다.
+
+대상 프로젝트 결정 순서는 아래다.
+
+1. 사용자가 명시한 프로젝트 경로
+2. `.harness/current_project` 에 저장된 active project
+3. 둘 다 없거나 비어 있으면 사용자에게 질문
+
+active project는 아래처럼 설정한다.
+
+```bash
+python3 scripts/use_project.py projects/harness_project_alpha
+```
 
 ## 툴별 사용법
 
@@ -65,8 +78,8 @@ Step 기반으로 작업을 분해하고, 세션이 끝나도 다른 AI 코딩�
 
 의미:
 
-- `/harness`: `AGENTS.md` 와 `docs/HARNESS.md` 를 기준으로 현재 phase를 이어서 진행
-- `/review`: `docs/REVIEW.md` 기준으로 현재 변경사항 리뷰
+- `/harness`: active project의 현재 phase를 이어서 진행
+- `/review`: active project의 현재 변경사항 리뷰
 
 ### Gemini CLI
 
@@ -138,6 +151,12 @@ docs/HARNESS.md 기준으로 harness workflow를 따라
 현재 변경사항을 docs/REVIEW.md 기준으로 리뷰해
 ```
 
+framework 리포에서 작업할 때는 대상 프로젝트를 함께 지정하거나 active project를 먼저 설정한다.
+
+```text
+projects/harness_project_alpha를 대상 프로젝트로 보고 첫 pending step부터 진행해
+```
+
 ## 빠른 시작
 
 ### 1. 새 task 시작
@@ -194,6 +213,7 @@ docs/HARNESS.md 기준으로 harness workflow를 따라
 자동 생성을 표준화하고 싶으면 아래를 사용할 수 있다.
 
 ```bash
+python3 scripts/use_project.py projects/harness_project_alpha
 python3 scripts/scaffold_phase.py 0-mvp --project ExampleProject --phase-name mvp --steps project-setup core-types api-layer
 python3 scripts/validate_phase.py 0-mvp
 ```
@@ -263,6 +283,7 @@ CI, 자동 실험, 또는 로컬 일괄 실행이 필요할 때만 쓴다.
 
 ```bash
 python3 scripts/execute.py 0-mvp
+python3 scripts/execute.py --root projects/harness_project_alpha 0-mvp
 python3 scripts/execute.py 0-mvp --backend claude
 python3 scripts/execute.py 0-mvp --backend codex
 python3 scripts/execute.py 0-mvp --backend gemini
@@ -333,11 +354,17 @@ python3 scripts/smoke_backends.py
 │   └── commands/
 ├── .kimi/
 │   └── skills/
-├── phases/
-│   └── {task}/
-│       ├── index.json
-│       ├── step0.md
-│       └── step0-output.json
+├── .harness/
+│   └── current_project
+├── projects/
+│   └── {project}/
+│       ├── .git
+│       ├── phases/
+│       │   └── {task}/
+│       │       ├── index.json
+│       │       ├── step0.md
+│       │       └── step0-output.json
+│       └── 실제 코드
 ├── harness.json
 └── scripts/
     └── execute.py

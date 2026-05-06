@@ -10,5 +10,9 @@ Start with:
 - @{docs/ADR.md}
 
 If there is an active phase, inspect the current files under `phases/` and continue from the first pending step.
+Target project resolution:
+- Use a project path appended by the user when present.
+- Otherwise read `.harness/current_project`.
+- If neither exists or the value is empty, ask the user for the target project path.
 If the user appended extra arguments to this command, treat them as additional instructions.
 """

@@ -4,12 +4,18 @@
 ```text
 /
 ├── docs/               # PRD, 아키텍처, ADR 등 전체 프로젝트 문서
-├── phases/             # 페이즈별 작업 스텝 (작업 상태 관리)
-│   ├── index.json      # 전체 페이즈 목록 및 상태 (Global State)
-│   └── {task}/         # 개별 페이즈 폴더 (Task Scope)
-│       ├── index.json  # 페이즈 내 스텝 목록 (Phase State)
-│       ├── stepN.md    # 실행 지시서 (Instruction)
-│       └── stepN-output.json # 세션 Handoff 기록 (Output/Resume)
+├── .harness/           # 로컬 active project 상태
+│   └── current_project # 현재 대상 프로젝트 경로 (git ignored)
+├── projects/           # 산출 프로젝트 루트 (git ignored)
+│   └── {project}/      # 독립 Git 저장소
+│       ├── .git        # product 전용 Git 저장소
+│       ├── phases/     # 페이즈별 작업 스텝 (작업 상태 관리)
+│       │   ├── index.json
+│       │   └── {task}/
+│       │       ├── index.json
+│       │       ├── stepN.md
+│       │       └── stepN-output.json
+│       └── 실제 코드
 ├── scripts/            # 하네스 엔진 및 유틸리티 (Harness Engine)
 │   ├── execute.py      # 범용 실행기 (Backend Agnostic)
 │   ├── scaffold_phase.py # 페이즈 뼈대 생성 (Automation)
@@ -30,16 +36,18 @@
 ## 데이터 흐름
 ```text
 1. 사용자 요청 (Harness Command)
-2. phases/index.json 탐색 (진행 중인 Phase 확인)
-3. phases/{task}/index.json 탐색 (첫 번째 pending 스텝 확인)
-4. stepN.md 로드 (목표 및 AC 확인)
-5. AI 에이전트 실행 (작업 수행 및 파일 수정)
-6. 검증 (Validation script 실행)
-7. 결과 기록 (stepN-output.json 생성 및 index.json 업데이트)
-8. 핸드오프 (다음 세션 대기)
+2. 대상 프로젝트 결정 (`.harness/current_project` 또는 사용자 입력)
+3. 대상 프로젝트의 phases/index.json 탐색 (진행 중인 Phase 확인)
+4. 대상 프로젝트의 phases/{task}/index.json 탐색 (첫 번째 pending 스텝 확인)
+5. stepN.md 로드 (목표 및 AC 확인)
+6. AI 에이전트 실행 (작업 수행 및 파일 수정)
+7. 검증 (Validation script 실행)
+8. 결과 기록 (stepN-output.json 생성 및 index.json 업데이트)
+9. 핸드오프 (다음 세션 대기)
 ```
 
 ## 상태 관리
-- **전역 상태:** `phases/index.json`
-- **로컬 상태:** `phases/{task}/index.json`
+- **프레임워크 로컬 상태:** `.harness/current_project`
+- **대상 프로젝트 전역 상태:** `phases/index.json`
+- **대상 프로젝트 로컬 상태:** `phases/{task}/index.json`
 - **전이 규칙:** `pending` -> `completed` (성공) / `error` (실패) / `blocked` (중단)

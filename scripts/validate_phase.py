@@ -7,16 +7,25 @@ import argparse
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
 from phase_utils import validate_phase_bundle
+from harness.project_context import resolve_project_root
 
 
 def main():
     parser = argparse.ArgumentParser(description="Validate a harness phase")
     parser.add_argument("phase_dir", help="Phase directory name (e.g. 0-mvp)")
-    parser.add_argument("--root", help="Repository root; defaults to current working directory")
+    parser.add_argument("--root", help="Target project root; defaults to .harness/current_project")
     args = parser.parse_args()
 
-    root = Path(args.root).resolve() if args.root else Path.cwd()
+    try:
+        root = resolve_project_root(ROOT, args.root, interactive=True)
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+
     errors = validate_phase_bundle(root, args.phase_dir)
     if errors:
         print("Phase validation failed:")

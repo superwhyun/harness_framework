@@ -70,8 +70,17 @@ class StepExecutor:
         },
     }
 
-    def __init__(self, root: Path, phase_dir_name: str, *, backend_name: Optional[str] = None, auto_push: bool = False):
+    def __init__(
+        self,
+        root: Path,
+        phase_dir_name: str,
+        *,
+        backend_name: Optional[str] = None,
+        auto_push: bool = False,
+        framework_root: Optional[Path] = None,
+    ):
         self._root = str(root)
+        self._framework_root = str(framework_root or root)
         self._phases_dir = root / "phases"
         self._phase_dir = self._phases_dir / phase_dir_name
         self._phase_dir_name = phase_dir_name
@@ -118,6 +127,10 @@ class StepExecutor:
 
     def _load_harness_settings(self) -> dict:
         config_file = Path(self._root) / "harness.json"
+        if not config_file.exists():
+            framework_config = Path(self._framework_root) / "harness.json"
+            if framework_config.exists():
+                config_file = framework_config
         if not config_file.exists():
             return {}
         try:
@@ -205,6 +218,7 @@ class StepExecutor:
     # --- Step Context & Execution ---
     def _load_guardrails(self) -> str:
         root = Path(self._root)
+        framework_root = Path(self._framework_root)
         sections = []
         seen = set()
 
@@ -217,14 +231,22 @@ class StepExecutor:
             seen.add(resolved)
             sections.append(f"## {title}\n\n{path.read_text(encoding='utf-8')}")
 
-        add_section(root / "AGENTS.md", "프로젝트 규칙 (AGENTS.md)")
+        add_section(framework_root / "AGENTS.md", "하네스 프레임워크 규칙 (AGENTS.md)")
+        framework_docs_dir = framework_root / "docs"
+        if framework_docs_dir.is_dir():
+            for doc in sorted(framework_docs_dir.glob("*.md")):
+                add_section(doc, f"프레임워크 문서 ({doc.stem})")
+
+        add_section(root / "AGENTS.md", "대상 프로젝트 규칙 (AGENTS.md)")
         docs_dir = root / "docs"
         if docs_dir.is_dir():
             for doc in sorted(docs_dir.glob("*.md")):
-                add_section(doc, doc.stem)
+                add_section(doc, f"대상 프로젝트 문서 ({doc.stem})")
 
         for rel_path in self._backend.guardrail_files:
-            add_section(root / rel_path, f"백엔드 보조 규칙 ({rel_path})")
+            project_path = root / rel_path
+            framework_path = framework_root / rel_path
+            add_section(project_path if project_path.exists() else framework_path, f"백엔드 보조 규칙 ({rel_path})")
 
         return "\n\n---\n\n".join(sections) if sections else ""
 

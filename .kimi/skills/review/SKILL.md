@@ -12,6 +12,12 @@ Read these files first:
 
 Then inspect the current diff and produce a findings-first review.
 
+Target project resolution:
+
+1. Use a project path appended by the user when present.
+2. Otherwise read `.harness/current_project`.
+3. If neither exists or the value is empty, ask the user for the target project path.
+
 Rules:
 
 1. Focus on bugs, regressions, risky assumptions, and missing verification.
