@@ -14,12 +14,12 @@ logs/
 tmp/
 
 # Project Identity Documents
-# (Harness will regenerate these for new projects)
-docs/PRD.md
-docs/ARCHITECTURE.md
-docs/ADR.md
-docs/UI_GUIDE.md
-docs/service-scenario-catalog.md
+# (These are example/template documents. Copy and customize for your project.)
+# docs/PRD.md
+# docs/ARCHITECTURE.md
+# docs/ADR.md
+# docs/UI_GUIDE.md
+# docs/service-scenario-catalog.md
 
 # Generated Artifacts & Reports
 *-output.json
@@ -29,7 +29,7 @@ test_report.json
 log_report.json
 
 # Harness Config
-harness.json
+# harness.json
 
 # --- Harness Framework Standard (Must be tracked) ---
 !AGENTS.md

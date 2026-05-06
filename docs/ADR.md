@@ -1,3 +1,5 @@
+> **Note:** 아래는 예시 프로젝트(FG-EAI)의 ADR 템플릿입니다. 실제 사용 시 프로젝트 내용으로 교체하세요.
+
 # Architecture Decision Records (ADR): FG-EAI
 
 ## 철학

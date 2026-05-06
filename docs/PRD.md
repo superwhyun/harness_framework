@@ -1,3 +1,5 @@
+> **Note:** 아래는 예시 프로젝트(FG-EAI)의 PRD 템플릿입니다. 실제 사용 시 프로젝트 내용으로 교체하세요.
+
 # PRD: FG-EAI (Embodied AI Service Standard & Harness)
 
 ## 목표
