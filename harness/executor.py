@@ -180,9 +180,12 @@ class StepExecutor:
 
         r = self._run_git("rev-parse", "--verify", branch)
         if r.returncode == 0:
-            self._run_git("checkout", branch)
+            r = self._run_git("checkout", branch)
         else:
-            self._run_git("checkout", "-b", branch)
+            r = self._run_git("checkout", "-b", branch)
+        if r.returncode != 0:
+            print(f"  ERROR: git checkout failed: {r.stderr.strip()}")
+            sys.exit(1)
         print(f"  Branch: {branch}")
 
     def _workspace_files(self) -> List[str]:
@@ -191,16 +194,21 @@ class StepExecutor:
             return []
         return sorted({line.strip() for line in result.stdout.splitlines() if line.strip()})
 
-    def _file_digest(self, rel_path: str) -> str:
+    def _file_digest(self, rel_path: str) -> Optional[str]:
         path = Path(self._root) / rel_path
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        except (FileNotFoundError, PermissionError):
+            return None
 
     def _capture_workspace_snapshot(self) -> Dict[str, str]:
         snapshot = {}
         for rel_path in self._workspace_files():
             path = Path(self._root) / rel_path
             if path.is_file():
-                snapshot[rel_path] = self._file_digest(rel_path)
+                digest = self._file_digest(rel_path)
+                if digest is not None:
+                    snapshot[rel_path] = digest
         return snapshot
 
     @staticmethod
@@ -263,7 +271,6 @@ class StepExecutor:
 
     def _build_resume_context(self, index: dict, step_num: int) -> str:
         sections = []
-        # Simplified resume logic for now
         for prev_step in range(step_num - 1, -1, -1):
             out_path = self._phase_dir / f"step{prev_step}-output.json"
             if out_path.exists():
@@ -276,7 +283,8 @@ class StepExecutor:
                         lines.append(f"- files_changed: {', '.join(prev_output['files_changed'])}")
                     sections.append("\n".join(lines))
                     break
-                except: pass
+                except (json.JSONDecodeError, FileNotFoundError, PermissionError, OSError) as exc:
+                    print(f"  WARN: resume context read failed for step {prev_step}: {exc}")
         return "\n\n".join(sections) + "\n\n" if sections else ""
 
     def _build_preamble(self, guardrails: str, step_context: str, resume_context: str, prev_error: Optional[str]) -> str:
