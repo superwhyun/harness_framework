@@ -28,13 +28,14 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 작업 전에는 아래 순서로 읽는다.
 
 1. `AGENTS.md`
-2. `docs/PRD.md`
-3. `docs/ARCHITECTURE.md`
-4. `docs/ADR.md`
-5. `docs/UI_GUIDE.md` (UI 작업인 경우)
-6. 현재 phase의 `phases/{task}/index.json`
-7. 현재 step의 `phases/{task}/stepN.md`
-8. 직전 step의 `phases/{task}/stepN-output.json` (있으면)
+2. `docs/HARNESS.md`
+3. `docs/PRD.md`
+4. `docs/ARCHITECTURE.md`
+5. `docs/ADR.md`
+6. `docs/UI_GUIDE.md` (UI 작업인 경우)
+7. 현재 phase의 `phases/{task}/index.json`
+8. 현재 step의 `phases/{task}/stepN.md`
+9. 직전 step의 `phases/{task}/stepN-output.json` (있으면)
 
 ## 인터랙티브 사용 방식
 
