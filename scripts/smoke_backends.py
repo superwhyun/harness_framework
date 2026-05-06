@@ -11,8 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-import execute as ex
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from harness.executor import StepExecutor
 
 
 HELP_CHECKS = {
@@ -44,7 +44,7 @@ HELP_CHECKS = {
 
 
 def available_backends() -> list[str]:
-    return sorted(ex.StepExecutor.DEFAULT_BACKENDS)
+    return sorted(StepExecutor.DEFAULT_BACKENDS)
 
 
 def run_help_check(name: str, cwd: Path) -> list[str]:

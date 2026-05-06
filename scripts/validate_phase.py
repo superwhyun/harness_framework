@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from phase_utils import validate_phase_bundle
+from scripts.phase_utils import validate_phase_bundle
 from harness.project_context import resolve_project_root
 
 
