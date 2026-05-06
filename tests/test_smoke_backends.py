@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT = Path(__file__).parent / "smoke_backends.py"
+SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "smoke_backends.py"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REQUIRED_BINARIES = ["claude", "codex", "gemini", "kimi"]
 

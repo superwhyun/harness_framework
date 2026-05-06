@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from harness.executor import StepExecutor, progress_indicator
+from harness.prompt_builder import PromptBuilder
+from harness.workspace import WorkspaceSnapshot
 from harness.backends.base import BackendResult
 
 
@@ -132,7 +134,9 @@ class TestJsonHelpers:
 
 class TestLoadGuardrails:
     def test_loads_agents_md_and_docs(self, executor, tmp_project):
-        result = executor._load_guardrails()
+        result = PromptBuilder.load_guardrails(
+            Path(tmp_project), Path(tmp_project), executor._backend.guardrail_files
+        )
         assert "# Shared Rules" in result
         assert "shared rule" in result
         assert "# Architecture" in result
@@ -140,7 +144,9 @@ class TestLoadGuardrails:
 
     def test_backend_guardrails(self, executor, tmp_project):
         # Claude 백엔드의 경우 CLAUDE.md를 로드해야 함
-        result = executor._load_guardrails()
+        result = PromptBuilder.load_guardrails(
+            Path(tmp_project), Path(tmp_project), executor._backend.guardrail_files
+        )
         assert "# Claude Rules" in result
 
 
@@ -151,7 +157,7 @@ class TestLoadGuardrails:
 class TestBuildStepContext:
     def test_includes_completed_with_summary(self, phase_dir):
         index = json.loads((phase_dir / "index.json").read_text())
-        result = StepExecutor._build_step_context(index)
+        result = PromptBuilder.build_step_context(index)
         assert "Step 0 (setup): 프로젝트 초기화 완료" in result
         assert "Step 1 (core): 핵심 로직 구현" in result
 
@@ -164,7 +170,7 @@ class TestWorkspaceSnapshots:
     def test_diff_workspace_snapshots_detects_changes(self):
         before = {"a.txt": "one", "b.txt": "two"}
         after = {"b.txt": "changed", "c.txt": "three"}
-        result = StepExecutor._diff_workspace_snapshots(before, after)
+        result = WorkspaceSnapshot.diff(before, after)
         assert sorted(result) == ["a.txt", "b.txt", "c.txt"]
 
 

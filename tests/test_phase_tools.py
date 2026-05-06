@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from phase_utils import scaffold_phase, validate_phase_bundle
+from scripts.phase_utils import scaffold_phase, validate_phase_bundle
 from harness.project_context import read_active_project, resolve_project_root, write_active_project
 
 
@@ -77,7 +77,7 @@ def test_validate_phase_script_runs(tmp_path):
     )
     scaffold_phase(tmp_path, "0-mvp", "Demo", "mvp", ["project-setup"])
 
-    script = Path(__file__).parent / "validate_phase.py"
+    script = Path(__file__).resolve().parent.parent / "scripts" / "validate_phase.py"
     result = subprocess.run(
         [sys.executable, str(script), "0-mvp", "--root", str(tmp_path)],
         cwd=tmp_path,
