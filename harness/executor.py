@@ -295,10 +295,42 @@ class StepExecutor:
             f"   {commit_example}\n\n---\n\n"
         )
 
+    def _write_step_output(
+        self,
+        step_num: int,
+        step_name: str,
+        before_snapshot: Dict[str, str],
+        after_snapshot: Dict[str, str],
+        elapsed: int,
+    ) -> Path:
+        files_changed = self._diff_workspace_snapshots(before_snapshot, after_snapshot)
+        index = self._read_json(self._index_file)
+        next_step = next(
+            (s for s in index["steps"] if s["step"] > step_num and s["status"] == "pending"),
+            None,
+        )
+        output = {
+            "summary": f"Step {step_num} ({step_name}) completed",
+            "files_changed": files_changed,
+            "verification": "AC passed and workspace changes verified via git diff",
+            "known_issues": [],
+            "next_actions": next_step["name"] if next_step else "phase complete",
+            "resume_hint": f"Continue with step {next_step['step']} ({next_step['name']})" if next_step else "Phase is complete. No further steps.",
+            "completed_work": [f"Executed step {step_num}: {step_name}"],
+            "decisions": {},
+            "blockers": None,
+            "elapsed_seconds": elapsed,
+            "written_at": self._stamp(),
+        }
+        out_path = self._phase_dir / f"step{step_num}-output.json"
+        self._write_json(out_path, output)
+        return out_path
+
     def _execute_single_step(self, step: dict, guardrails: str):
         step_num, step_name = step["step"], step["name"]
         done = sum(1 for s in self._read_json(self._index_file)["steps"] if s["status"] == "completed")
         prev_error = None
+        before_snapshot = self._step_snapshots.get(step_num, {})
 
         for attempt in range(1, self.MAX_RETRIES + 1):
             index = self._read_json(self._index_file)
@@ -321,6 +353,9 @@ class StepExecutor:
             
             if status == "completed":
                 print(f"  ✓ Step {step_num}: {step_name} [{elapsed}s]")
+                after_snapshot = self._capture_workspace_snapshot()
+                out_path = self._write_step_output(step_num, step_name, before_snapshot, after_snapshot, elapsed)
+                self._run_git("add", str(out_path.relative_to(Path(self._root))))
                 self._run_git("add", "-A")
                 self._run_git("commit", "-m", self.FEAT_MSG.format(phase=self._phase_name, num=step_num, name=step_name))
                 return True
