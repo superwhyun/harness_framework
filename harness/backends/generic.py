@@ -1,6 +1,7 @@
 import subprocess
 from typing import List
 from .base import AgentBackend, BackendResult
+from ..safety import SafetyFilter
 
 class GenericCommandBackend(AgentBackend):
     def __init__(self, name: str, command_template: List[str], guardrail_files: List[str]):
@@ -24,6 +25,15 @@ class GenericCommandBackend(AgentBackend):
 
     def invoke(self, prompt: str, *, cwd: str, timeout: int) -> BackendResult:
         command = self._render_command(self._command_template, prompt)
+        block_reason = SafetyFilter.check_command(command)
+        if block_reason:
+            return BackendResult(
+                backend=self.name,
+                command=command,
+                exit_code=1,
+                stdout="",
+                stderr=block_reason,
+            )
         result = subprocess.run(
             command,
             cwd=cwd,
