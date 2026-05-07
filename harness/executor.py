@@ -51,22 +51,25 @@ class StepExecutor:
     DEFAULT_BACKEND = "claude"
 
     # Safe default backends (no dangerous flags)
+    # Common guardrail baseline applied to all backends
+    _COMMON_GUARDRAILS = ["AGENTS.md"]
+
     DEFAULT_BACKENDS = {
         "claude": {
             "command": ["claude", "-p", "--output-format", "json", "{prompt}"],
-            "guardrail_files": ["CLAUDE.md"],
+            "guardrail_files": _COMMON_GUARDRAILS + ["CLAUDE.md"],
         },
         "codex": {
             "command": ["codex", "exec", "--json", "{prompt}"],
-            "guardrail_files": [],
+            "guardrail_files": _COMMON_GUARDRAILS,
         },
         "gemini": {
             "command": ["gemini", "--output-format", "json", "{prompt}"],
-            "guardrail_files": [],
+            "guardrail_files": _COMMON_GUARDRAILS + ["GEMINI.md"],
         },
         "kimi": {
             "command": ["kimi", "--output-format", "stream-json", "-p", "{prompt}"],
-            "guardrail_files": [],
+            "guardrail_files": _COMMON_GUARDRAILS,
         },
     }
 
@@ -74,19 +77,19 @@ class StepExecutor:
     DANGEROUS_BACKENDS = {
         "claude": {
             "command": ["claude", "-p", "--dangerously-skip-permissions", "--output-format", "json", "{prompt}"],
-            "guardrail_files": ["CLAUDE.md"],
+            "guardrail_files": _COMMON_GUARDRAILS + ["CLAUDE.md"],
         },
         "codex": {
             "command": ["codex", "exec", "--json", "--dangerously-bypass-approvals-and-sandbox", "{prompt}"],
-            "guardrail_files": [],
+            "guardrail_files": _COMMON_GUARDRAILS,
         },
         "gemini": {
             "command": ["gemini", "--approval-mode", "yolo", "--output-format", "json", "{prompt}"],
-            "guardrail_files": [],
+            "guardrail_files": _COMMON_GUARDRAILS + ["GEMINI.md"],
         },
         "kimi": {
             "command": ["kimi", "--print", "--output-format", "stream-json", "-p", "{prompt}"],
-            "guardrail_files": [],
+            "guardrail_files": _COMMON_GUARDRAILS,
         },
     }
 
