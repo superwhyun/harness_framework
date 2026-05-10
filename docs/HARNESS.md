@@ -23,6 +23,13 @@ Claude Code, Gemini CLI, Kimi Code CLI, Codex 모두 이 문서를 기준으로 
 `phases/`는 항상 `projects/{project-name}/phases/` 경로에 위치해야 한다. 프레임워크 루트나 다른 경로에 생성하지 마라.
 
 ### A. 탐색 (Discovery)
+
+**CRITICAL — 탐색 전 필수 확인:**
+대상 프로젝트 디렉터리에 `phases/` 가 존재하면 **진행 중인 프로젝트**다.
+`package.json`이나 소스 코드가 없어도 마찬가지다.
+이 경우 scaffold를 재실행하거나 디렉터리를 삭제·초기화하지 마라.
+반드시 `phases/index.json`을 읽고 첫 `pending` step부터 이어서 진행한다.
+
 먼저 아래를 읽고 현재 상태를 파악한다.
 1. `AGENTS.md` (공통 규칙)
 2. `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/ADR.md`
@@ -70,6 +77,18 @@ python3 scripts/scaffold_phase.py {phase-dir} --project {name} --steps step1 ste
 **커밋 위치**: `projects/{project-name}/` 의 자체 git repo 안에서 실행한다.
 harness framework 루트에서 실행하면 `projects/`가 gitignore 대상이라 동작하지 않는다.
 
+**`git init` 규칙**:
+- `git init`은 프로젝트 최초 생성 시(scaffold step) **딱 한 번만** 실행한다.
+- `.git` 디렉터리가 이미 존재하면 `git init`을 절대 재실행하지 마라.
+- 커밋 전에는 반드시 `git status`로 repo 존재 여부를 확인한다.
+- 이미 repo가 있는데 `git init`을 실행하면 기존 git 설정이 손상될 수 있다.
+
+**`.gitignore` 규칙**:
+- `git init` 직후, 첫 `git add` 실행 전에 `.gitignore`를 반드시 작성한다.
+- `.gitignore` 없이 `git add .` 또는 `git add -A`를 실행하지 마라.
+- 반드시 포함해야 할 항목: `node_modules/`, `dist/`, `build/`, `.env*`, `.DS_Store`, `*.tsbuildinfo`, `.vercel`, `coverage/`, `__pycache__/`, `.venv/`
+- 기술 스택에 따라 추가 항목을 포함한다.
+
 **커밋 시점**: AC를 통과하고 `stepN-output.json` handoff를 작성한 직후.
 
 **커밋 메시지 형식**:
@@ -100,3 +119,20 @@ git tag {project}-phase{N}-done
 - `phases/{task}/index.json`: 스텝 목록 및 상태.
 - `phases/{task}/stepN.md`: 실행 지시서.
 - `phases/{task}/stepN-output.json`: 세션 핸드오프 기록.
+
+## CRITICAL: phases/ 보호 규칙
+
+`phases/` 디렉터리는 프로젝트의 구현 계획과 진행 상태를 담는 SSOT다.
+어떤 상황에서도 아래 행동은 금지한다:
+
+- 프로젝트 디렉터리(`projects/{project-name}/`) 삭제 또는 재생성
+- `phases/` 디렉터리 삭제 또는 재생성
+- 기존 `stepN.md` 파일 덮어쓰기 (이미 내용이 있는 경우)
+- `phases/index.json` 또는 `phases/{task}/index.json` 초기화
+
+**새 세션에서 작업을 시작할 때의 올바른 순서:**
+1. `phases/index.json` 읽기 → 전체 phase 상태 파악
+2. 첫 `pending` phase의 `phases/{task}/index.json` 읽기
+3. 첫 `pending` step의 `stepN.md` 읽기
+4. 직전 완료 step의 `stepN-output.json` 읽기 (있으면)
+5. 작업 시작

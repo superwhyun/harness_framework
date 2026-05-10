@@ -148,6 +148,73 @@ git tag {project}-phase{N}-done
 - handoff 없이 세션을 끝내지 마라.
 - "대화 맥락이 있으니 다음 AI가 알아서 이해할 것"이라고 가정하지 마라.
 
+## CRITICAL: git init 및 .gitignore 규칙
+
+`git init`은 프로젝트 최초 scaffold 시 **딱 한 번만** 실행한다.
+
+- `.git` 디렉터리가 이미 존재하면 `git init`을 절대 재실행하지 마라.
+- 매 step마다 `git init`을 실행하는 것은 잘못된 동작이다.
+- 커밋 전 반드시 `git status`로 repo 존재 여부를 먼저 확인한다.
+- 이미 초기화된 repo에 `git init`을 재실행하면 설정이 손상될 수 있다.
+
+**`.gitignore`는 `git init` 직후, 첫 `git add` 전에 반드시 작성한다.**
+
+scaffold step에서 반드시 포함해야 할 항목:
+```
+# 의존성
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# 빌드 산출물
+dist/
+build/
+*.tsbuildinfo
+
+# 환경 변수
+.env
+.env.local
+.env.*.local
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 배포 도구
+.vercel
+
+# 테스트 커버리지
+coverage/
+```
+
+기술 스택에 맞게 추가하되, `.gitignore` 없이 `git add .`를 절대 실행하지 마라.
+
+## CRITICAL: phases/ 디렉터리 보호
+
+**`phases/` 디렉터리와 그 하위 파일은 절대 삭제하거나 덮어쓰지 마라.**
+
+이 디렉터리는 프로젝트 구현 계획과 진행 상태를 담는 유일한 진실 공급원(SSOT)이다.
+세션이 바뀌어도 이 파일들이 있어야 다음 AI가 작업을 이어받을 수 있다.
+
+금지 행동:
+- `rm -rf projects/{project-name}` 또는 프로젝트 디렉터리 삭제
+- `phases/` 디렉터리 삭제 또는 재생성
+- `phases/index.json`, `phases/{task}/index.json` 초기화
+- `scaffold_phase.py`를 `--force` 없이 기존 phase에 재실행 (stepN.md 덮어쓰기)
+
+새 세션 시작 시 **반드시** 아래 순서로 상태를 먼저 확인한다:
+1. `phases/index.json` 읽기
+2. 첫 번째 `pending` step의 `stepN.md` 읽기
+3. 직전 step의 `stepN-output.json` 읽기 (있으면)
+4. 그 다음에 작업 시작
+
+프로젝트 디렉터리에 `package.json`이 없거나 소스 코드가 없어도,
+`phases/`가 존재하면 **신규 프로젝트가 아니라 진행 중인 프로젝트**다.
+scaffold를 다시 실행하지 마라.
+
 ## 프로젝트 명령
 
 - Claude Code: `/harness`, `/review`
