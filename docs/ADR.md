@@ -1,6 +1,4 @@
-> **Note:** 아래는 예시 프로젝트(FG-EAI)의 ADR 템플릿입니다. 실제 사용 시 프로젝트 내용으로 교체하세요.
-
-# Architecture Decision Records (ADR): FG-EAI
+# Architecture Decision Records (ADR)
 
 ## 철학
 - **상태 기반 협업 (State-based Collaboration):** AI 에이전트 간의 소통은 대화 로그보다 구조화된 파일 상태를 우선한다.
@@ -19,7 +17,7 @@
 **이유**: 별도의 인프라 구축 없이 Git 저장소만으로 작업 상태를 동기화하고, 누구나 쉽게 상태를 조회할 수 있게 하기 위함이다.
 **트레이드오프**: 파일 충돌(Merge Conflict)의 위험이 있으나, 한 번에 하나의 스텝만 진행하는 하네스 규칙으로 이를 제어한다.
 
-### ADR-003: ITU-T F.748.66과의 정렬 (ITU-T Alignment)
-**결정**: 모든 Embodied AI 관련 용어와 요구사항은 ITU-T F.748.66(Requirements and framework for embodied AI systems)의 정의를 최우선으로 따른다.
-**이유**: 국제 표준과의 정렬을 통해 향후 권고안(Recommendation) 채택 가능성을 높이기 위함이다.
-**트레이드오프**: 최신 학계 용어와 표준 용어 간의 차이가 발생할 수 있으며, 이 경우 표준 용어를 공식적으로 채택한다.
+### ADR-003: 계약 우선 모듈 경계 (Contract-first Module Boundaries)
+**결정**: 후속 step은 이전 step의 구현 전체가 아니라 `module-map.json`, phase baseline, public contract를 우선 입력으로 사용한다. 이전 구현 수정이 필요하면 현재 step에 섞지 않고 `blocking-fix`, `contract-change`, `module-fix`, `backlog-fix` step으로 승격한다.
+**이유**: 매 step마다 이전 구현과 긴 handoff를 다시 읽는 토큰 낭비를 줄이면서도, contract test와 integration step을 통해 결과물 품질을 유지하기 위함이다.
+**트레이드오프**: Step 0에서 모듈 경계와 contract를 더 신중하게 설계해야 하며, contract가 틀린 경우 별도 fix/change step이 추가된다.

@@ -3,10 +3,11 @@
 변경 사항을 리뷰할 때는 아래 순서로 확인한다.
 
 1. `AGENTS.md`
-2. `docs/ARCHITECTURE.md`
-3. `docs/ADR.md`
-4. 관련 diff
-5. 관련 테스트
+2. `docs/HARNESS.md`
+3. `docs/ARCHITECTURE.md`
+4. `docs/ADR.md`
+5. 관련 diff
+6. 관련 테스트
 
 ## 체크리스트
 

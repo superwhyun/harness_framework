@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "phase": "{{phase_dir}}",
+  "baseline": null,
+  "policy": {
+    "context_mode": "contract-first",
+    "frozen_after_completion": true,
+    "default_read_order": [
+      "baseline",
+      "module-map",
+      "public-contracts",
+      "current-step",
+      "targeted-implementation-only-if-needed"
+    ]
+  },
+  "modules": [
+    {
+      "name": "{{first_step_name}}",
+      "owner_steps": [0],
+      "owned_paths": [
+        "{replace-with-{{first_step_name}}-owned-paths}"
+      ],
+      "contracts": [
+        "{replace-with-{{first_step_name}}-public-contracts}"
+      ],
+      "dependencies": [],
+      "status": "planned"
+    }
+  ],
+  "shared_contracts": [],
+  "integration_points": [],
+  "deferred_backlog": []
+}

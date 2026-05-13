@@ -8,7 +8,29 @@
 - `/docs/HARNESS.md`
 - `/docs/ARCHITECTURE.md`
 - `/docs/ADR.md`
+- `phases/{task}/module-map.json`
+- `phases/baselines/{previous-phase}.json` (이 phase가 이전 phase 위에서 진행되는 경우)
 - {관련 파일 경로}
+
+이전 step의 구현 파일이나 긴 handoff를 기본 입력으로 삼지 마라. 먼저 baseline, module-map, public contract를 읽고, Acceptance Criteria 달성에 꼭 필요한 경우에만 영향 모듈의 구현을 제한적으로 읽어라.
+
+## 모듈 할당
+
+이 step이 소유하는 모듈과 파일 경계를 명시하라.
+
+- module: `{module-name}`
+- owned_paths:
+  - `{이 step이 생성/수정할 수 있는 경로}`
+- read_contracts:
+  - `{의존 모듈의 public contract 경로}`
+- forbidden_paths:
+  - `{이 step에서 읽거나 수정하지 않을 구현 경로}`
+
+## 계약 및 베이스라인
+
+- 의존 모듈은 구현 내부가 아니라 `read_contracts`에 적힌 public contract만 기준으로 사용한다.
+- contract가 부족하거나 틀려 현재 step의 AC를 통과할 수 없으면 현재 step을 `blocked`로 기록하고 `blocking-fix` 또는 `contract-change` step을 append한다.
+- 현재 step을 막지 않는 개선사항은 현재 step을 완료한 뒤 phase 마지막에 `backlog-fix` step으로 append한다.
 
 ## 작업
 
@@ -21,13 +43,24 @@ npm run build
 npm test
 ```
 
+<!-- Step 0인 경우 아래 항목을 추가하라 -->
+<!-- - [ ] `phases/{task}/module-map.json`의 `contracts` 경로에 적힌 파일이 모두 실제로 존재한다 -->
+<!-- - [ ] placeholder(`{replace-with-...}`)가 남아 있지 않다 -->
+<!-- - [ ] `python3 scripts/validate_phase.py {phase-dir} --root projects/{project-name}` 통과 -->
+
 ## 검증 절차
 
 1. Acceptance Criteria 명령을 실행한다.
 2. 결과를 확인한다.
-3. `phases/{task}/index.json` 과 `stepN-output.json` 에 상태와 handoff를 기록한다.
+3. contract test 또는 integration test가 이 step 범위에 있으면 함께 실행한다.
+4. `owned_paths` 밖의 구현 파일이 변경되지 않았는지 확인한다.
+5. `phases/{task}/module-map.json`의 `contracts` 항목에 적힌 파일이 실제로 존재하는지 확인한다. (Step 0인 경우 필수)
+6. `phases/{task}/index.json` 과 `stepN-output.json` 에 상태와 handoff를 기록한다.
 
 ## 금지사항
 
 - 현재 step 범위를 벗어난 기능을 추가하지 마라.
+- 이전 step의 구현 파일을 일반 참고 자료처럼 다시 읽고 재설계하지 마라.
+- `owned_paths` 밖의 구현 파일을 몰래 수정하지 마라.
+- public contract 변경이 필요하면 현재 step 안에 섞지 말고 별도 `contract-change` step으로 승격하라.
 - 다음 세션을 위한 handoff 없이 종료하지 마라.

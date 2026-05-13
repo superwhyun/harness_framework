@@ -16,6 +16,7 @@ Step 기반으로 작업을 분해하고, 세션이 끝나도 다른 AI 코딩�
 - step 완료 기준은 사용자의 막연한 만족이 아니라 step의 Acceptance Criteria 통과 여부다.
 - 한 step은 최대 3회까지만 재시도한다.
 - 세션이 끝나면 다음 세션을 위해 handoff를 남긴다.
+- 후속 step은 이전 구현 전체가 아니라 baseline, module-map, public contract를 먼저 읽는다.
 
 즉, 핵심은 무한 자동화가 아니라 "구조화된 작업 기록과 안전한 재개"다.
 
@@ -164,7 +165,9 @@ projects/harness_project_alpha를 대상 프로젝트로 보고 첫 pending step
 새 작업을 만들 때는 아래 파일들을 만든다.
 
 - `phases/index.json`
+- `phases/baselines/`
 - `phases/{task}/index.json`
+- `phases/{task}/module-map.json`
 - `phases/{task}/step0.md`
 - 필요하면 `step1.md`, `step2.md` ...
 
@@ -198,6 +201,8 @@ projects/harness_project_alpha를 대상 프로젝트로 보고 첫 pending step
 각 `stepN.md` 에는 최소 아래가 있어야 한다.
 
 - 읽어야 할 파일
+- 모듈 할당 (`owned_paths`, `read_contracts`, `forbidden_paths`)
+- 계약 및 베이스라인 규칙
 - 작업 범위
 - Acceptance Criteria
 - 검증 절차
@@ -206,6 +211,10 @@ projects/harness_project_alpha를 대상 프로젝트로 보고 첫 pending step
 권장 원칙:
 
 - 한 step은 한 레이어 또는 한 모듈만 다룬다.
+- 후속 step은 의존 모듈의 구현 내부가 아니라 public contract를 기본 입력으로 삼는다.
+- 현재 step을 막는 contract/모듈 문제가 있으면 `blocking-fix` 또는 `contract-change` step을 append한다.
+- 현재 step을 막지 않는 개선사항은 phase 마지막에 `backlog-fix`로 append한다.
+- 기존 step 번호를 재정렬하지 않는다.
 - 독립 세션에서도 이해 가능하게 쓴다.
 - "이전 대화에서 말했듯" 같은 표현은 쓰지 않는다.
 - AC는 실제 실행 가능한 명령으로 쓴다.
@@ -258,9 +267,9 @@ AI 툴은 현재 `phases/{task}/index.json` 에서 첫 `pending` step을 찾고,
 1. Claude Code에서 step 0 완료
 2. `step0-output.json` 생성
 3. 다음 날 Gemini CLI에서 리포를 열고 `/harness`
-4. Gemini가 `index.json` 과 `step0-output.json` 을 읽고 step 1부터 이어서 진행
+4. Gemini가 `index.json`, baseline, `module-map.json`, public contract를 읽고 step 1부터 이어서 진행
 
-다음 세션은 이전 대화 로그가 아니라 상태 파일과 handoff 파일을 기준으로 이어받아야 한다.
+다음 세션은 이전 대화 로그가 아니라 상태 파일을 기준으로 이어받아야 한다. `stepN-output.json`은 복구용이고, 후속 개발 입력은 baseline, module-map, public contract를 우선한다.
 
 ## 리뷰 방식
 

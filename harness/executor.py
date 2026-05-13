@@ -14,6 +14,7 @@ from .git_manager import GitManager
 from .workspace import WorkspaceSnapshot
 from .prompt_builder import PromptBuilder
 from .handoff_writer import HandoffWriter
+from .manifest import update_project_manifest
 
 
 @contextlib.contextmanager
@@ -46,7 +47,7 @@ def progress_indicator(label: str):
 class StepExecutor:
     MAX_RETRIES = 3
     COMMAND_TIMEOUT = 1800
-    FEAT_MSG = "feat({phase}): step {num} — {name}"
+    FEAT_MSG = "feat({project}/step{num}): {name}"
     TZ = timezone(timedelta(hours=9))
     DEFAULT_BACKEND = "claude"
 
@@ -137,8 +138,9 @@ class StepExecutor:
         guardrails = self._prompt.load_guardrails(
             Path(self._root), Path(self._framework_root), self._backend.guardrail_files
         )
+        manifest_context = self._prompt.load_project_manifest(self._phases_dir)
         self._ensure_created_at()
-        self._execute_all_steps(guardrails)
+        self._execute_all_steps(guardrails, manifest_context)
         self._finalize()
 
     @staticmethod
@@ -191,7 +193,7 @@ class StepExecutor:
                 configs[name] = data
         return configs
 
-    def _execute_single_step(self, step: dict, guardrails: str):
+    def _execute_single_step(self, step: dict, guardrails: str, manifest_context: str):
         step_num, step_name = step["step"], step["name"]
         done = sum(1 for s in self._read_json(self._index_file)["steps"] if s["status"] == "completed")
         prev_error = None
@@ -209,6 +211,7 @@ class StepExecutor:
                 phase_dir_name=self._phase_dir_name,
                 backend_name=self._backend.name,
                 guardrails=guardrails,
+                manifest_context=manifest_context,
                 step_context=step_context,
                 resume_context=resume_context,
                 prev_error=prev_error,
@@ -230,12 +233,14 @@ class StepExecutor:
 
             if status == "completed":
                 print(f"  ✓ Step {step_num}: {step_name} [{elapsed}s]")
+                current_step = next((s for s in index["steps"] if s["step"] == step_num), step)
+                released_steps = self._release_blocked_steps(index, current_step)
+                if released_steps:
+                    current_step["unblocked_steps"] = released_steps
+                    self._write_json(self._index_file, index)
                 after_snapshot = self._workspace.capture()
                 files_changed = self._workspace.diff(before_snapshot, after_snapshot)
-                next_step = next(
-                    (s for s in index["steps"] if s["step"] > step_num and s["status"] == "pending"),
-                    None,
-                )
+                next_step = self._select_next_step(index)
                 out_path = HandoffWriter.write(
                     phase_dir=self._phase_dir,
                     step_num=step_num,
@@ -245,8 +250,12 @@ class StepExecutor:
                     next_step_name=next_step["name"] if next_step else None,
                 )
                 self._git.add(str(out_path.relative_to(Path(self._root))))
-                self._git.commit_all(self.FEAT_MSG.format(phase=self._phase_name, num=step_num, name=step_name))
+                self._git.commit_all(self.FEAT_MSG.format(project=self._project, num=step_num, name=step_name))
                 return True
+
+            if status == "blocked":
+                print(f"  ✗ Step {step_num} set itself to blocked. Append a blocking-fix step to index.json and re-run.")
+                sys.exit(1)
 
             if attempt == self.MAX_RETRIES:
                 print(f"  ✗ Step {step_num} failed after {self.MAX_RETRIES} attempts.")
@@ -254,23 +263,71 @@ class StepExecutor:
 
             prev_error = HandoffWriter.extract_error(result)
 
-    def _execute_all_steps(self, guardrails: str):
+    def _execute_all_steps(self, guardrails: str, manifest_context: str):
         while True:
             index = self._read_json(self._index_file)
-            pending = next((s for s in index["steps"] if s["status"] == "pending"), None)
+            pending = self._select_next_step(index)
             if pending is None:
                 break
-            self._execute_single_step(pending, guardrails)
+            self._execute_single_step(pending, guardrails, manifest_context)
 
     def _print_header(self):
         print(f"\n{'=' * 60}\n  Harness Step Executor (Refactored)\n  Phase: {self._phase_name}\n  Backend: {self._backend.name}\n{'=' * 60}")
 
     def _check_blockers(self):
         index = self._read_json(self._index_file)
+        if any(s.get("status") == "error" for s in index["steps"]):
+            errored = next(s for s in index["steps"] if s.get("status") == "error")
+            print(f"  ✗ Phase is in error state at Step {errored['step']}.")
+            sys.exit(1)
+
+        blocked = [s for s in index["steps"] if s.get("status") == "blocked"]
+        if blocked and self._pending_blocking_fix(index) is None:
+            first_blocked = blocked[0]
+            print(f"  ✗ Phase is blocked at Step {first_blocked['step']} and has no pending blocking-fix step.")
+            sys.exit(1)
+
+    @staticmethod
+    def _pending_blocking_fix(index: dict) -> Optional[dict]:
         for s in index["steps"]:
-            if s["status"] in {"error", "blocked"}:
-                print(f"  ✗ Phase is in {s['status']} state at Step {s['step']}.")
-                sys.exit(1)
+            if s.get("status") == "pending" and s.get("kind") == "blocking-fix":
+                return s
+        return None
+
+    @classmethod
+    def _select_next_step(cls, index: dict) -> Optional[dict]:
+        blocking_fix = cls._pending_blocking_fix(index)
+        if blocking_fix is not None:
+            return blocking_fix
+        return next((s for s in index["steps"] if s.get("status") == "pending"), None)
+
+    @staticmethod
+    def _normalize_step_refs(value) -> List[int]:
+        if value is None:
+            return []
+        if isinstance(value, int):
+            return [value]
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, int)]
+        return []
+
+    def _release_blocked_steps(self, index: dict, fixer_step: dict) -> List[int]:
+        if fixer_step.get("kind") != "blocking-fix":
+            return []
+
+        targets = self._normalize_step_refs(fixer_step.get("unblocks"))
+        targets += self._normalize_step_refs(fixer_step.get("unblocks_step"))
+        if not targets:
+            return []
+
+        released: List[int] = []
+        for step in index["steps"]:
+            if step.get("step") in targets and step.get("status") == "blocked":
+                step["status"] = "pending"
+                step["unblocked_by_step"] = fixer_step["step"]
+                step.pop("blocked_by_step", None)
+                released.append(step["step"])
+        return released
 
     def _ensure_created_at(self):
         index = self._read_json(self._index_file)
@@ -282,10 +339,55 @@ class StepExecutor:
         index = self._read_json(self._index_file)
         index["completed_at"] = self._stamp()
         self._write_json(self._index_file, index)
+        baseline = self._write_phase_baseline(index)
+        if baseline:
+            update_project_manifest(self._phases_dir, self._phase_dir_name, baseline)
         self._update_top_index()
         print(f"\n  ✓ Phase '{self._phase_name}' completed!")
         if self._auto_push:
             self._git.push(f"feat-{self._phase_name}")
+
+    def _write_phase_baseline(self, index: dict) -> Optional[dict]:
+        baseline_dir = self._phases_dir / "baselines"
+        baseline_dir.mkdir(parents=True, exist_ok=True)
+        baseline_path = baseline_dir / f"{self._phase_dir_name}.json"
+        if baseline_path.exists():
+            return None
+
+        module_map_path = self._phase_dir / "module-map.json"
+        module_map = {}
+        if module_map_path.exists():
+            try:
+                module_map = self._read_json(module_map_path)
+            except (OSError, json.JSONDecodeError) as exc:
+                print(f"  WARN: could not read module-map for baseline: {exc}")
+
+        source_module_map = None
+        if module_map_path.exists():
+            source_module_map = f"phases/{self._phase_dir_name}/module-map.json"
+
+        baseline = {
+            "schema_version": 1,
+            "project": self._project,
+            "phase": self._phase_dir_name,
+            "phase_name": self._phase_name,
+            "tag": f"{self._project}-{self._phase_dir_name}-done",
+            "source_module_map": source_module_map,
+            "modules": module_map.get("modules", []),
+            "routes": [],
+            "shared_contracts": module_map.get("shared_contracts", []),
+            "integration_points": module_map.get("integration_points", []),
+            "known_issues": [],
+            "completed_steps": [
+                {"step": step.get("step"), "name": step.get("name"), "summary": step.get("summary")}
+                for step in index.get("steps", [])
+                if step.get("status") == "completed"
+            ],
+            "completed_at": index.get("completed_at"),
+            "written_at": self._stamp(),
+        }
+        self._write_json(baseline_path, baseline)
+        return baseline
 
     def _update_top_index(self):
         top_path = self._top_index_file

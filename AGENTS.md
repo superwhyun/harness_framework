@@ -22,6 +22,8 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 - step 실행 중 무한 개선 루프를 돌리지 않는다.
 - 한 step은 최대 3회까지만 재시도한다.
 - 세션이 끝날 때는 다음 세션이 바로 이어받을 수 있게 handoff를 남긴다.
+- 후속 step은 이전 구현 전체가 아니라 `baseline`, `module-map`, public contract를 우선 읽는다.
+- 품질이나 AC 때문에 이전 구현 확인이 필요하면 영향 모듈만 targeted read 한다.
 
 ## 문서 우선순위
 
@@ -29,13 +31,13 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 
 1. `AGENTS.md`
 2. `docs/HARNESS.md`
-3. `docs/PRD.md`
-4. `docs/ARCHITECTURE.md`
-5. `docs/ADR.md`
-6. `docs/UI_GUIDE.md` (UI 작업인 경우)
-7. 현재 phase의 `phases/{task}/index.json`
+3. `docs/ARCHITECTURE.md`
+4. `docs/ADR.md`
+5. `phases/project-manifest.json` (있으면) — 전체 프로젝트 누적 현황
+6. 현재 phase의 `phases/{task}/index.json`
+7. 현재 phase의 `phases/{task}/module-map.json` (있으면)
 8. 현재 step의 `phases/{task}/stepN.md`
-9. 직전 step의 `phases/{task}/stepN-output.json` (있으면)
+9. 직전 step의 `phases/{task}/stepN-output.json` (복구가 필요할 때만)
 
 ## 인터랙티브 사용 방식
 
@@ -72,10 +74,16 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 
 설계 원칙:
 
+- Step 0은 가능하면 `module-map`과 public contract 초안을 먼저 만든다.
 - 한 step은 한 레이어 또는 한 모듈만 다룬다.
+- 각 step은 `owned_paths`, `read_contracts`, `forbidden_paths`를 명시한다.
+- 후속 step은 의존 모듈의 구현 내부가 아니라 public contract만 기본 입력으로 삼는다.
 - 각 step은 독립 세션에서도 이해 가능해야 한다.
 - step 안에는 읽을 파일, 구현 범위, 검증 명령, 금지사항이 있어야 한다.
 - AC는 실제 실행 가능한 명령으로 쓴다.
+- contract가 틀려 현재 step을 완료할 수 없으면 현재 step을 `blocked`로 기록하고 `blocking-fix` 또는 `contract-change` step을 append한다. append된 blocking step은 즉시 우선 수행한다.
+- 현재 step을 막지 않는 개선사항은 현재 step을 완료한 뒤 phase 마지막에 `backlog-fix` step으로 append한다.
+- 이미 존재하는 step 번호를 재정렬하거나 renumbering 하지 않는다. 새 step은 항상 append한다.
 - 새 phase를 만들 때는 `scripts/scaffold_phase.py`를 사용한다. 대상 프로젝트가 `.harness/current_project`에 설정되어 있으면 `--root` 없이도 동작하고, 없으면 `--root projects/{project-name}`을 명시한다.
 - phase 파일을 생성하거나 크게 수정한 뒤에는 `scripts/validate_phase.py`로 형식을 검증한다.
 
@@ -84,9 +92,10 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 이미 `phases/{task}/index.json` 이 있으면 첫 `pending` step부터 이어서 진행한다.
 
 - `completed`면 다음 step으로 간다.
-- `blocked`면 즉시 중단하고 이유를 기록한다.
+- `blocked`면 이유를 기록한다. 단, 해당 blocked step을 해소하는 pending `blocking-fix` step이 있으면 그 step을 먼저 수행한다.
 - `error`면 원인과 다음 액션을 남긴다.
 - 한 step은 최대 3회까지만 재시도한다.
+- `blocking-fix` 완료 후에는 `unblocks` 대상 step을 다시 `pending`으로 돌려 원래 작업을 재개한다.
 
 ### 4. handoff 기록
 
@@ -96,6 +105,8 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 
 **CRITICAL (Phase 마감 규칙):**
 - 특정 Phase의 마지막 step이 `completed`가 되면, 즉시 상위 `phases/index.json`의 해당 Phase 상태를 `completed`로 업데이트해야 한다.
+- Phase 마감 시 다음 phase가 전체 소스코드를 재탐색하지 않도록 `phases/baselines/{phase-dir}.json`에 모듈, public surface, shared contracts, routes, integration points를 요약해야 한다. 배치 실행기는 최소 baseline skeleton을 자동 생성한다.
+- Phase 마감 시 배치 실행기는 `phases/project-manifest.json`에 해당 phase의 모듈, 라우트, 공유 계약, 통합 지점을 자동으로 누적한다. 새 phase의 에이전트는 이 파일을 읽어 전체 프로젝트 현황을 파악한다.
 - Phase 마감 시 반드시 `git tag {project}-phase{N}-done`을 생성한다.
 
 ### 5. 세션 시작 및 탐색 (상태 정합성 체크)
@@ -139,12 +150,26 @@ git tag {project}-phase{N}-done
 ### `phases/{task}/stepN-output.json`
 
 - 세션 handoff 기록이다.
-- 다음 세션은 이 파일을 읽고 이어서 작업해야 한다.
+- 이 파일은 복구용 기록이다. 후속 개발 입력은 기본적으로 `baseline`, `module-map`, public contract를 우선한다.
+
+### `phases/{task}/module-map.json`
+
+- 현재 phase의 모듈 경계와 step 소유권을 관리한다.
+- 각 모듈은 `owner_steps`, `owned_paths`, `contracts`, `dependencies`를 가진다.
+- 후속 step은 이 파일을 기준으로 읽기/수정 범위를 제한한다.
+
+### `phases/baselines/{phase-dir}.json`
+
+- 완료된 phase의 압축된 결과 상태다.
+- 다음 phase의 step0는 이전 phase의 구현 전체가 아니라 이 baseline과 public contract를 먼저 읽는다.
 
 ## 금지사항
 
 - 여러 step을 한 세션에서 한꺼번에 밀어붙이지 마라.
 - 현재 step 범위를 벗어난 기능을 추가하지 마라.
+- 이전 step의 구현 내부를 기본 입력으로 삼아 재탐색하지 마라.
+- `owned_paths` 밖의 구현 파일을 현재 step에 섞어 수정하지 마라.
+- 기존 step을 중간에 끼워 넣기 위해 step 번호를 재정렬하지 마라.
 - handoff 없이 세션을 끝내지 마라.
 - "대화 맥락이 있으니 다음 AI가 알아서 이해할 것"이라고 가정하지 마라.
 
@@ -207,9 +232,11 @@ coverage/
 
 새 세션 시작 시 **반드시** 아래 순서로 상태를 먼저 확인한다:
 1. `phases/index.json` 읽기
-2. 첫 번째 `pending` step의 `stepN.md` 읽기
-3. 직전 step의 `stepN-output.json` 읽기 (있으면)
-4. 그 다음에 작업 시작
+2. `phases/project-manifest.json` 읽기 (있으면) — 전체 프로젝트 누적 현황
+3. 첫 번째 `pending` phase의 `module-map.json` 읽기 (있으면)
+4. 첫 번째 `pending` step의 `stepN.md` 읽기
+5. 직전 step의 `stepN-output.json` 읽기 (복구가 필요할 때만)
+6. 그 다음에 작업 시작
 
 프로젝트 디렉터리에 `package.json`이 없거나 소스 코드가 없어도,
 `phases/`가 존재하면 **신규 프로젝트가 아니라 진행 중인 프로젝트**다.
