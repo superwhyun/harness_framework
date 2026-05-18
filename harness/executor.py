@@ -5,15 +5,13 @@ import time
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List
 import contextlib
 
 from .backends.base import AgentBackend, BackendResult
 from .backends.generic import GenericCommandBackend
 from .git_manager import GitManager
-from .workspace import WorkspaceSnapshot
 from .prompt_builder import PromptBuilder
-from .handoff_writer import HandoffWriter
 from .manifest import update_project_manifest
 
 
@@ -112,9 +110,7 @@ class StepExecutor:
         self._auto_push = auto_push
         self._harness_settings = self._load_harness_settings()
         self._backend = self._resolve_backend(backend_name)
-        self._step_snapshots: Dict[int, Dict[str, str]] = {}
         self._git = GitManager(self._root)
-        self._workspace = WorkspaceSnapshot(self._root)
         self._prompt = PromptBuilder()
 
         if not self._phase_dir.is_dir():
@@ -197,14 +193,10 @@ class StepExecutor:
         step_num, step_name = step["step"], step["name"]
         done = sum(1 for s in self._read_json(self._index_file)["steps"] if s["status"] == "completed")
         prev_error = None
-        if step_num not in self._step_snapshots:
-            self._step_snapshots[step_num] = self._workspace.capture()
-        before_snapshot = self._step_snapshots[step_num]
 
         for attempt in range(1, self.MAX_RETRIES + 1):
             index = self._read_json(self._index_file)
             step_context = self._prompt.build_step_context(index)
-            resume_context = self._prompt.build_resume_context(self._phase_dir, step_num)
             preamble = self._prompt.build_preamble(
                 project=self._project,
                 phase_name=self._phase_name,
@@ -213,7 +205,6 @@ class StepExecutor:
                 guardrails=guardrails,
                 manifest_context=manifest_context,
                 step_context=step_context,
-                resume_context=resume_context,
                 prev_error=prev_error,
                 feat_msg_template=self.FEAT_MSG,
             )
@@ -238,18 +229,6 @@ class StepExecutor:
                 if released_steps:
                     current_step["unblocked_steps"] = released_steps
                     self._write_json(self._index_file, index)
-                after_snapshot = self._workspace.capture()
-                files_changed = self._workspace.diff(before_snapshot, after_snapshot)
-                next_step = self._select_next_step(index)
-                out_path = HandoffWriter.write(
-                    phase_dir=self._phase_dir,
-                    step_num=step_num,
-                    step_name=step_name,
-                    files_changed=files_changed,
-                    elapsed=elapsed,
-                    next_step_name=next_step["name"] if next_step else None,
-                )
-                self._git.add(str(out_path.relative_to(Path(self._root))))
                 self._git.commit_all(self.FEAT_MSG.format(project=self._project, num=step_num, name=step_name))
                 return True
 
@@ -261,7 +240,12 @@ class StepExecutor:
                 print(f"  ✗ Step {step_num} failed after {self.MAX_RETRIES} attempts.")
                 sys.exit(1)
 
-            prev_error = HandoffWriter.extract_error(result)
+            if result.stderr.strip():
+                prev_error = result.stderr.strip()[:500]
+            elif result.stdout.strip():
+                prev_error = result.stdout.strip()[:500]
+            else:
+                prev_error = f"Step did not complete (exit code {result.exit_code}). No output captured."
 
     def _execute_all_steps(self, guardrails: str, manifest_context: str):
         while True:

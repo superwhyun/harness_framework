@@ -24,7 +24,6 @@ Rules:
 1. Continue from the first `pending` step in the active phase of the target project.
 2. Only work on one step at a time.
 3. Do not invent missing context from previous conversations.
-4. Use `stepN-output.json` as the handoff source of truth when present.
-5. Before ending the session, leave a structured handoff including `summary`, `files_changed`, `verification`, `known_issues`, `next_actions`, and `resume_hint`.
+4. Use `module-map.json`, `phases/baselines/{phase-dir}.json`, and public contracts as the primary inputs for each step.
 
 If the user appended extra instructions after `/skill:harness`, apply them as additional constraints.

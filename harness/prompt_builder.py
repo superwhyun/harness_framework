@@ -108,26 +108,6 @@ class PromptBuilder:
         )
 
     @staticmethod
-    def build_resume_context(phase_dir: Path, step_num: int) -> str:
-        sections = []
-        for prev_step in range(step_num - 1, -1, -1):
-            out_path = phase_dir / f"step{prev_step}-output.json"
-            if out_path.exists():
-                try:
-                    prev_output = json.loads(out_path.read_text(encoding="utf-8"))
-                    lines = [f"## 이전 세션 handoff (Step {prev_step})", ""]
-                    if prev_output.get("summary"):
-                        lines.append(f"- summary: {prev_output['summary']}")
-                    if prev_output.get("next_actions"):
-                        lines.append(f"- next_actions: {prev_output['next_actions']}")
-                    lines.append("- note: 이전 step output은 복구용이다. 구현 입력은 public contract와 baseline을 우선한다.")
-                    sections.append("\n".join(lines))
-                    break
-                except (json.JSONDecodeError, FileNotFoundError, PermissionError, OSError) as exc:
-                    print(f"  WARN: resume context read failed for step {prev_step}: {exc}")
-        return "\n\n".join(sections) + "\n\n" if sections else ""
-
-    @staticmethod
     def build_preamble(
         project: str,
         phase_name: str,
@@ -136,7 +116,6 @@ class PromptBuilder:
         guardrails: str,
         manifest_context: str,
         step_context: str,
-        resume_context: str,
         prev_error: Optional[str],
         feat_msg_template: str,
     ) -> str:
@@ -147,7 +126,7 @@ class PromptBuilder:
             f"현재 실행 백엔드: {backend_name}\n\n"
             f"{guardrails}\n\n---\n\n"
             f"{manifest_context}"
-            f"{step_context}{resume_context}{retry_section}"
+            f"{step_context}{retry_section}"
             "## 작업 규칙\n\n"
             "1. 이 스텝에 명시된 작업만 수행하라.\n"
             f"2. phases/project-manifest.json이 있으면 전체 프로젝트 현황을 먼저 파악하고, 기존 모듈·계약과 충돌하지 않게 설계하라.\n"

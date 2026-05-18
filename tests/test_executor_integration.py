@@ -87,9 +87,6 @@ def test_step_executor_runs_pending_steps():
     idx = json.loads((root / "phases" / "0-test" / "index.json").read_text(encoding="utf-8"))
     assert all(s["status"] == "completed" for s in idx["steps"])
 
-    # Verify stepN-output.json was created
-    assert (root / "phases" / "0-test" / "step0-output.json").exists()
-    assert (root / "phases" / "0-test" / "step1-output.json").exists()
 
 
 def test_step_executor_retry_on_failure():
@@ -121,34 +118,6 @@ def test_step_executor_retry_on_failure():
     idx = json.loads((root / "phases" / "0-retry" / "index.json").read_text(encoding="utf-8"))
     assert idx["steps"][0]["status"] == "completed"
 
-
-def test_step_executor_output_fields():
-    root = _make_project("0-output", ["step-a"])
-    (root / "CLAUDE.md").write_text("# Claude\n", encoding="utf-8")
-    executor = StepExecutor(root=root, phase_dir_name="0-output", backend_name="claude")
-
-    def side_effect(prompt, **kwargs):
-        idx = json.loads((root / "phases" / "0-output" / "index.json").read_text(encoding="utf-8"))
-        idx["steps"][0]["status"] = "completed"
-        idx["steps"][0]["summary"] = "done"
-        (root / "phases" / "0-output" / "index.json").write_text(json.dumps(idx), encoding="utf-8")
-        return BackendResult(backend="mock", command=[], exit_code=0, stdout="ok", stderr="")
-
-    backend = _mock_backend()
-    backend.invoke.side_effect = side_effect
-    executor._backend = backend
-    executor._execute_all_steps("", "")
-
-    out_path = root / "phases" / "0-output" / "step0-output.json"
-    assert out_path.exists()
-    data = json.loads(out_path.read_text(encoding="utf-8"))
-    assert "summary" in data
-    assert "files_changed" in data
-    assert "verification" in data
-    assert "known_issues" in data
-    assert "next_actions" in data
-    assert "resume_hint" in data
-    assert data["next_actions"] == "phase complete"
 
 
 def test_step_executor_prioritizes_blocking_fix_and_unblocks_step():

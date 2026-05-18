@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 .DS_Store
+.serena/
 
 # Harness Runtime Data (Project Specific)
 projects/

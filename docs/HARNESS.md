@@ -6,7 +6,6 @@ Claude Code, Gemini CLI, Kimi Code CLI, Codex 모두 이 문서를 기준으로 
 ## 목표
 - 작업을 step 단위로 분해한다.
 - step 상태를 파일로 관리한다.
-- 세션이 끝나도 다른 AI 툴이 이어받을 수 있게 handoff를 남긴다.
 - 자동 반복은 최대 3회 재시도로 제한한다.
 - 후속 step은 이전 구현 전체 대신 baseline, module-map, public contract를 우선 읽어 토큰 사용을 줄인다.
 - 코드 품질을 위해 필요한 경우에는 영향 모듈만 targeted read 하고, 수정은 별도 fix/change step으로 분리한다.
@@ -79,11 +78,7 @@ python3 scripts/scaffold_phase.py {phase-dir} --project {name} --steps step1 ste
 - 스텝당 최대 3회 재시도.
 - `blocking-fix` step 완료 후에는 `unblocks` 대상 step을 다시 `pending`으로 풀고 원래 흐름으로 돌아간다.
 
-### E. 핸드오프 (Handoff)
-세션 종료 전에는 `stepN-output.json`에 최소 아래를 남긴다.
-- `summary`, `completed_work`, `files_changed`, `decisions`, `verification`, `known_issues`, `next_actions`, `blockers`, `resume_hint`
-
-`stepN-output.json`은 복구용 handoff다. 후속 개발의 기본 입력은 `baseline`, `module-map`, public contract다.
+### E. Phase 마감 (Baseline)
 
 phase 종료 시에는 다음 phase가 전체 구현을 다시 읽지 않도록 `phases/baselines/{phase-dir}.json`에 아래를 남긴다. 배치 실행기는 최소 baseline skeleton을 자동 생성하며, 에이전트는 필요한 경우 내용을 더 풍부하게 보강한다.
 - 완료 tag
@@ -112,7 +107,7 @@ harness framework 루트에서 실행하면 `projects/`가 gitignore 대상이�
 - 반드시 포함해야 할 항목: `node_modules/`, `dist/`, `build/`, `.env*`, `.DS_Store`, `*.tsbuildinfo`, `.vercel`, `coverage/`, `__pycache__/`, `.venv/`
 - 기술 스택에 따라 추가 항목을 포함한다.
 
-**커밋 시점**: AC를 통과하고 `stepN-output.json` handoff를 작성한 직후.
+**커밋 시점**: AC를 통과한 직후.
 
 **커밋 메시지 형식**:
 ```
@@ -143,7 +138,6 @@ git tag {project}-phase{N}-done
 - `phases/{task}/index.json`: 스텝 목록 및 상태.
 - `phases/{task}/module-map.json`: 모듈 경계, 소유 step, owned paths, public contracts, dependencies.
 - `phases/{task}/stepN.md`: 실행 지시서.
-- `phases/{task}/stepN-output.json`: 세션 복구용 핸드오프 기록.
 - `phases/baselines/{phase-dir}.json`: 완료 phase의 압축된 기준선.
 
 ## CRITICAL: phases/ 보호 규칙
@@ -162,5 +156,4 @@ git tag {project}-phase{N}-done
 3. 첫 `pending` phase의 `phases/{task}/index.json` 읽기
 4. 첫 `pending` phase의 `module-map.json` 읽기 (있으면)
 5. 첫 `pending` step의 `stepN.md` 읽기
-6. 직전 완료 step의 `stepN-output.json`은 복구가 필요할 때만 읽기
-7. 작업 시작
+6. 작업 시작

@@ -21,7 +21,6 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 - 완료 기준은 "사용자 만족"이 아니라 step에 적힌 Acceptance Criteria 통과 여부다.
 - step 실행 중 무한 개선 루프를 돌리지 않는다.
 - 한 step은 최대 3회까지만 재시도한다.
-- 세션이 끝날 때는 다음 세션이 바로 이어받을 수 있게 handoff를 남긴다.
 - 후속 step은 이전 구현 전체가 아니라 `baseline`, `module-map`, public contract를 우선 읽는다.
 - 품질이나 AC 때문에 이전 구현 확인이 필요하면 영향 모듈만 targeted read 한다.
 
@@ -37,7 +36,6 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 6. 현재 phase의 `phases/{task}/index.json`
 7. 현재 phase의 `phases/{task}/module-map.json` (있으면)
 8. 현재 step의 `phases/{task}/stepN.md`
-9. 직전 step의 `phases/{task}/stepN-output.json` (복구가 필요할 때만)
 
 ## 인터랙티브 사용 방식
 
@@ -97,12 +95,6 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 - 한 step은 최대 3회까지만 재시도한다.
 - `blocking-fix` 완료 후에는 `unblocks` 대상 step을 다시 `pending`으로 돌려 원래 작업을 재개한다.
 
-### 4. handoff 기록
-
-세션 종료 전에는 현재 step의 output JSON에 가능한 한 아래를 남긴다.
-
-- `summary`, `completed_work`, `files_changed`, `decisions`, `verification`, `known_issues`, `next_actions`, `blockers`, `resume_hint`
-
 **CRITICAL (Phase 마감 규칙):**
 - 특정 Phase의 마지막 step이 `completed`가 되면, 즉시 상위 `phases/index.json`의 해당 Phase 상태를 `completed`로 업데이트해야 한다.
 - Phase 마감 시 다음 phase가 전체 소스코드를 재탐색하지 않도록 `phases/baselines/{phase-dir}.json`에 모듈, public surface, shared contracts, routes, integration points를 요약해야 한다. 배치 실행기는 최소 baseline skeleton을 자동 생성한다.
@@ -118,7 +110,7 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 
 커밋은 **step 단위**로 한다. phase 단위로 묶지 않는다.
 
-커밋 시점: AC 통과 + `stepN-output.json` 작성 직후.
+커밋 시점: AC 통과 직후.
 
 커밋 메시지 형식:
 ```
@@ -147,11 +139,6 @@ git tag {project}-phase{N}-done
 
 - 해당 step의 실행 지시서다.
 
-### `phases/{task}/stepN-output.json`
-
-- 세션 handoff 기록이다.
-- 이 파일은 복구용 기록이다. 후속 개발 입력은 기본적으로 `baseline`, `module-map`, public contract를 우선한다.
-
 ### `phases/{task}/module-map.json`
 
 - 현재 phase의 모듈 경계와 step 소유권을 관리한다.
@@ -170,7 +157,6 @@ git tag {project}-phase{N}-done
 - 이전 step의 구현 내부를 기본 입력으로 삼아 재탐색하지 마라.
 - `owned_paths` 밖의 구현 파일을 현재 step에 섞어 수정하지 마라.
 - 기존 step을 중간에 끼워 넣기 위해 step 번호를 재정렬하지 마라.
-- handoff 없이 세션을 끝내지 마라.
 - "대화 맥락이 있으니 다음 AI가 알아서 이해할 것"이라고 가정하지 마라.
 
 ## CRITICAL: git init 및 .gitignore 규칙
@@ -235,8 +221,7 @@ coverage/
 2. `phases/project-manifest.json` 읽기 (있으면) — 전체 프로젝트 누적 현황
 3. 첫 번째 `pending` phase의 `module-map.json` 읽기 (있으면)
 4. 첫 번째 `pending` step의 `stepN.md` 읽기
-5. 직전 step의 `stepN-output.json` 읽기 (복구가 필요할 때만)
-6. 그 다음에 작업 시작
+5. 그 다음에 작업 시작
 
 프로젝트 디렉터리에 `package.json`이 없거나 소스 코드가 없어도,
 `phases/`가 존재하면 **신규 프로젝트가 아니라 진행 중인 프로젝트**다.
