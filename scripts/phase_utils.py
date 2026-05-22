@@ -56,12 +56,9 @@ def render_template(template: str, values: dict[str, str]) -> str:
 
 def default_module_entry(step_name: str, step_index: int) -> dict:
     return {
-        "name": step_name,
+        "ref": f"docs/modules/{step_name}/MODULE.md",
         "owner_steps": [step_index],
-        "owned_paths": [f"{{replace-with-{step_name}-owned-paths}}"],
-        "contracts": [f"{{replace-with-{step_name}-public-contracts}}"],
-        "dependencies": [],
-        "status": "planned",
+        "phase_status": "planned",
     }
 
 
@@ -265,13 +262,21 @@ def _validate_module_map(module_map_path: Path, errors: list[str]) -> None:
             errors.append(f"{module_map_path} module {index} must be an object")
             continue
 
+        owner_steps = module.get("owner_steps")
+        if not isinstance(owner_steps, list) or not owner_steps or not all(isinstance(item, int) for item in owner_steps):
+            errors.append(f"{module_map_path} module {index} owner_steps must be a non-empty integer array")
+
+        # Thin format: ref + phase_status (new)
+        if "ref" in module:
+            ref = module.get("ref")
+            if not isinstance(ref, str) or not ref:
+                errors.append(f"{module_map_path} module {index} ref must be a non-empty string")
+            continue
+
+        # Legacy format: name + owned_paths + contracts + dependencies
         name = module.get("name")
         if not isinstance(name, str) or not STEP_NAME_PATTERN.fullmatch(name):
             errors.append(f"{module_map_path} module {index} name must be kebab-case")
-
-        owner_steps = module.get("owner_steps")
-        if not isinstance(owner_steps, list) or not owner_steps or not all(isinstance(item, int) for item in owner_steps):
-            errors.append(f"{module_map_path} module {name or index} owner_steps must be a non-empty integer array")
 
         owned_paths = module.get("owned_paths")
         if not isinstance(owned_paths, list) or not owned_paths or not all(isinstance(item, str) and item for item in owned_paths):
@@ -280,8 +285,6 @@ def _validate_module_map(module_map_path: Path, errors: list[str]) -> None:
             errors.append(f"{module_map_path} module {name or index} owned_paths contains unfilled placeholder")
 
         contracts = module.get("contracts")
-        # Empty contracts array is allowed for modules still in "planned" status (Step 0 pre-fill).
-        # Once a module is active, contracts should be populated.
         if not isinstance(contracts, list) or not all(isinstance(item, str) and item for item in contracts):
             errors.append(f"{module_map_path} module {name or index} contracts must be a string array")
         elif any(PLACEHOLDER_PATTERN.match(c) for c in contracts if isinstance(c, str)):

@@ -26,16 +26,18 @@ Claude Code, Gemini CLI, Kimi Code CLI에서도 이 파일 내용을 기준으�
 
 ## 문서 우선순위
 
-작업 전에는 아래 순서로 읽는다.
+작업 전에는 아래 순서로 읽는다. 세션당 1회만 읽는다.
 
 1. `AGENTS.md`
 2. `docs/HARNESS.md`
 3. `docs/ARCHITECTURE.md`
-4. `docs/ADR.md`
-5. `phases/project-manifest.json` (있으면) — 전체 프로젝트 누적 현황
-6. 현재 phase의 `phases/{task}/index.json`
-7. 현재 phase의 `phases/{task}/module-map.json` (있으면)
-8. 현재 step의 `phases/{task}/stepN.md`
+4. `docs/modules/registry.json` (있으면) — 현재 모듈 상태 파악
+5. `docs/ADR.md`
+6. `phases/project-manifest.json` (있으면) — 전체 프로젝트 누적 현황
+7. 현재 phase의 `phases/{task}/index.json`
+8. 현재 phase의 `phases/{task}/module-map.json` (있으면)
+9. `docs/modules/{해당 모듈}/MODULE.md` — module-map의 ref 확인 후 해당 모듈만
+10. 현재 step의 `phases/{task}/stepN.md`
 
 ## 인터랙티브 사용 방식
 
@@ -123,6 +125,42 @@ git tag {project}-phase{N}-done
 ```
 
 자세한 내용은 `docs/HARNESS.md`의 "F. Git 커밋" 섹션을 참조한다.
+
+## 모듈 페르소나 규칙
+
+모듈-페르소나 레이어에 대한 상세 규약은 `docs/MODULES.md`를 참조한다.
+
+### 핵심 원칙
+
+- `docs/modules/registry.json`은 전체 모듈 상태의 단일 진실 공급원(SSOT)이다.
+- 각 모듈의 페르소나와 컨트랙트는 `docs/modules/{id}/MODULE.md`에 정의된다.
+- 자기 모듈의 MODULE.md만 수정한다. 타 모듈 MODULE.md는 읽기만 한다.
+- `phases/{task}/module-map.json`은 MODULE.md를 `ref`로 참조하며 phase-specific 정보만 담는다.
+
+### step 유형별 역할
+
+- **bootstrap step (phase 최초 step0)**: `docs/modules/` 구조 생성, registry.json 초기화, MODULE.md 초안 작성
+- **contract-negotiation step (변경 시 step0)**: MODULE.md contract 수정, registry status 업데이트, downstream 영향 확인
+- **구현 step**: 해당 모듈 페르소나로 작동, owned_paths 내 구현, MODULE.md version bump, registry 업데이트
+- **통합 검증 step**: registry 전체 healthy 확인, docs/ARCHITECTURE.md 업데이트
+
+### docs/ 동기화 의무
+
+구현 step 완료 시 반드시 아래를 수행한다.
+
+- `docs/modules/{id}/MODULE.md` contract를 구현과 일치시킨다
+- `docs/modules/registry.json`의 version과 status를 최신으로 유지한다
+- 시스템 흐름이 바뀌면 `docs/ARCHITECTURE.md` 관련 섹션을 업데이트한다
+
+### 스캐폴드 명령
+
+```bash
+# 새 모듈 생성
+python3 scripts/scaffold_module.py auth/token \
+  --project my-app \
+  --persona "Token Manager" \
+  --parent auth
+```
 
 ## 상태 파일 규칙
 

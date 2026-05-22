@@ -60,10 +60,13 @@ def test_scaffold_phase_creates_valid_bundle(tmp_path):
     assert [step["name"] for step in phase_index["steps"]] == ["project-setup", "api-layer"]
     assert (tmp_path / "phases" / "0-mvp" / "module-map.json").exists()
     module_map = json.loads((tmp_path / "phases" / "0-mvp" / "module-map.json").read_text(encoding="utf-8"))
-    assert [module["name"] for module in module_map["modules"]] == ["project-setup", "api-layer"]
-    # scaffold generates placeholder entries for extra steps — validation intentionally fails until filled
-    errors = validate_phase_bundle(tmp_path, "0-mvp")
-    assert any("unfilled placeholder" in e for e in errors)
+    modules = module_map["modules"]
+    assert len(modules) == 2
+    # First module from template (legacy format with name)
+    assert modules[0]["name"] == "project-setup"
+    # Second module auto-generated (thin format with ref)
+    assert modules[1]["ref"] == "docs/modules/api-layer/MODULE.md"
+    assert modules[1]["phase_status"] == "planned"
 
 
 def test_validate_catches_unfilled_placeholder_in_owned_paths(tmp_path):

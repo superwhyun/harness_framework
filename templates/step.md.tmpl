@@ -7,8 +7,10 @@
 - `/AGENTS.md`
 - `/docs/HARNESS.md`
 - `/docs/ARCHITECTURE.md`
+- `docs/modules/registry.json`
 - `/docs/ADR.md`
 - `phases/{task}/module-map.json`
+- `docs/modules/{해당 모듈}/MODULE.md` (module-map의 ref 확인 후 해당 모듈만)
 - `phases/baselines/{previous-phase}.json` (이 phase가 이전 phase 위에서 진행되는 경우)
 - {관련 파일 경로}
 
@@ -44,9 +46,15 @@ npm test
 ```
 
 <!-- Step 0인 경우 아래 항목을 추가하라 -->
-<!-- - [ ] `phases/{task}/module-map.json`의 `contracts` 경로에 적힌 파일이 모두 실제로 존재한다 -->
+<!-- - [ ] `phases/{task}/module-map.json`의 ref 경로에 적힌 MODULE.md 파일이 모두 실제로 존재한다 -->
 <!-- - [ ] placeholder(`{replace-with-...}`)가 남아 있지 않다 -->
 <!-- - [ ] `python3 scripts/validate_phase.py {phase-dir} --root projects/{project-name}` 통과 -->
+<!-- - [ ] docs/modules/registry.json이 생성되었다 (bootstrap step인 경우) -->
+
+<!-- 구현 step 공통 AC -->
+<!-- - [ ] docs/modules/{id}/MODULE.md contract가 구현과 일치한다 -->
+<!-- - [ ] docs/modules/registry.json version과 status가 최신이다 -->
+<!-- - [ ] docs/ARCHITECTURE.md 관련 섹션이 변경 사항을 반영한다 (흐름 변경 시) -->
 
 ## 검증 절차
 

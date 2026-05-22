@@ -1,0 +1,27 @@
+---
+id: {{module_id}}
+version: 1.0.0
+parent: {{parent_id}}
+persona: {{persona_name}}
+status: planned
+contract_version: 1.0.0
+---
+
+# {{persona_name}}
+
+## Contract
+
+### Inputs
+- `{replace-with-method-signatures}`
+
+### Errors
+- `{replace-with-error-types}`
+
+### Dependencies
+- upstream: {{parent_id}}
+- downstream: 없음
+
+## Autonomy
+- 내부 구현: 자유
+- Contract 변경: parent({{parent_id}}) + downstream 페르소나와 협의, Manager 최종 승인
+- 타 모듈 MODULE.md: 읽기만, 수정 금지
