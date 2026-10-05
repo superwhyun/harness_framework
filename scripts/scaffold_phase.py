@@ -20,7 +20,6 @@ def main():
     parser.add_argument("--project", required=True, help="Project name")
     parser.add_argument("--phase-name", help="Display phase name; defaults to phase_dir")
     parser.add_argument("--steps", nargs="+", required=True, help="Ordered kebab-case step names")
-    parser.add_argument("--force", action="store_true", help="Overwrite existing step markdown files")
     parser.add_argument("--root", help="Target project root; defaults to .harness/current_project")
     parser.add_argument("--template-root", help="Template root; defaults to the harness framework root")
     args = parser.parse_args()
@@ -32,15 +31,17 @@ def main():
         sys.exit(1)
 
     template_root = Path(args.template_root).resolve() if args.template_root else ROOT
-    scaffold_phase(
-        root,
-        args.phase_dir,
-        args.project,
-        args.phase_name or args.phase_dir,
-        args.steps,
-        template_root=template_root,
-        force=args.force,
-    )
+    try:
+        scaffold_phase(
+            root,
+            args.phase_dir,
+            args.project,
+            args.phase_name or args.phase_dir,
+            args.steps,
+            template_root=template_root,
+        )
+    except (OSError, ValueError) as exc:
+        parser.exit(1, f"ERROR: {exc}\n")
     print(f"Scaffolded phase {args.phase_dir}")
 
 

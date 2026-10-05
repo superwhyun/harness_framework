@@ -1,60 +1,36 @@
-# 아키텍처: Harness Framework
+# Architecture
 
-## 디렉토리 구조
-```text
-/
-├── docs/               # 아키텍처, ADR, 워크플로우 문서
-├── .harness/           # 로컬 active project 상태
-│   └── current_project # 현재 대상 프로젝트 경로 (git ignored)
-├── projects/           # 산출 프로젝트 루트 (git ignored)
-│   └── {project}/      # 독립 Git 저장소
-│       ├── .git        # product 전용 Git 저장소
-│       ├── phases/     # 페이즈별 작업 스텝 (작업 상태 관리)
-│       │   ├── index.json
-│       │   ├── baselines/
-│       │   │   └── {phase-dir}.json
-│       │   └── {task}/
-│       │       ├── index.json
-│       │       ├── module-map.json
-│       │       └── stepN.md
-│       └── 실제 코드
-├── scripts/            # 하네스 엔진 및 유틸리티 (Harness Engine)
-│   ├── execute.py      # 범용 실행기 (Backend Agnostic)
-│   ├── scaffold_phase.py # 페이즈 뼈대 생성 (Automation)
-│   └── validate_phase.py # 정합성 검증 (Validation)
-└── templates/          # 스텝 및 페이즈 표준 템플릿
-```
+## 기본 구성
 
-## 패턴
-### 1. 단계별 분해 (Step-based Decomposition)
-복잡한 작업을 원자 단위의 `Step`으로 분해하여, AI 에이전트가 각 단계의 `Acceptance Criteria(AC)`에만 집중하게 함으로써 오류를 최소화한다.
+- `AGENTS.md`: 에이전트 공통 프로젝트 규칙.
+- `templates/task.md.tmpl`: 큰 작업의 목표·완료 조건·진행·검증·재개 기록.
+- `scripts/scaffold_task.py`: 지정한 저장소에 task 하나를 생성. 기존 기록을 덮어쓰지 않는다.
+- `tasks/{task}.md`: 명시적 단위별 범위·의존 관계·완료 조건·검증 결과와 현재 상태. 현재 에이전트 세션이 단위별로 수행하며 외부 모델 호출은 없다.
+- 도구별 진입 파일: 공통 규칙과 필요할 때만 읽는 workflow로 연결.
 
-### 2. 계약 우선 모듈 경계 (Contract-first Module Boundary)
-각 phase는 `module-map.json`으로 모듈, 소유 step, `owned_paths`, public contract, dependency를 기록한다. 후속 step은 이전 구현 전체를 다시 읽지 않고 baseline과 public contract를 먼저 읽는다. 품질상 구현 확인이 필요할 때만 영향 모듈을 targeted read 한다.
+개발 흐름은 사용자 요청 → 필요한 탐색과 계획 → 구현 → 검증 → 기록 갱신이다.
+구현·검증·컨텍스트 압축·권한은 현재 에이전트와 도구가 담당한다. 하네스 지침은 단위별 순서와 검증 결과를 명시하도록 하고, 스캐폴드는 기록 틀만 생성한다.
+작은 작업에는 task 파일을 요구하지 않는다. 큰 작업도 하나의 기록을 사용한다.
 
-### 3. 백엔드 추상화 (Backend Abstraction)
-특정 AI 벤더 전용 명령이 아닌, 공통 인터페이스(`AgentBackend`)를 통해 다양한 AI CLI를 백엔드로 선택하여 실행할 수 있도록 한다.
+## 정보의 기준
 
-## 데이터 흐름
-```text
-1. 사용자 요청 (Harness Command)
-2. 대상 프로젝트 결정 (`.harness/current_project` 또는 사용자 입력)
-3. 대상 프로젝트의 phases/index.json 탐색 (진행 중인 Phase 확인)
-4. 대상 프로젝트의 phases/{task}/index.json 탐색 (첫 번째 pending 스텝 확인)
-5. 이전 phase baseline과 현재 phase module-map 로드 (있으면)
-6. stepN.md 로드 (목표, 모듈 경계, AC 확인)
-7. AI 에이전트 실행 (작업 수행 및 파일 수정)
-8. blocked step을 해소하는 blocking-fix가 있으면 우선 실행
-9. 검증 (Validation script 실행)
-10. index.json 상태 업데이트 및 커밋
-11. Phase 완료 시 baseline artifact 생성
-```
+- 코드·타입·스키마: 실제 동작과 공개 계약.
+- task 또는 기존 phase: 현재 진행과 재개 정보.
+- Git: 변경 이력.
+- architecture/ADR: 코드만으로 드러나지 않는 구조와 중요한 결정.
 
-## 상태 관리
-- **프레임워크 로컬 상태:** `.harness/current_project`
-- **대상 프로젝트 전역 상태:** `phases/index.json`
-- **대상 프로젝트 로컬 상태:** `phases/{task}/index.json`
-- **모듈 경계 상태:** `phases/{task}/module-map.json`
-- **Phase 기준선:** `phases/baselines/{phase-dir}.json`
-- **전이 규칙:** `pending` -> `completed` (성공) / `error` (실패) / `blocked` (중단)
-- **Blocking fix 규칙:** pending `blocking-fix` step은 일반 pending step보다 먼저 실행되고, 완료 시 `unblocks` 대상 step을 다시 `pending`으로 돌린다.
+module persona, registry, module-map, baseline, project-manifest를 기본 작업에 생성하거나 동기화하지 않는다.
+병렬 작업에 필요한 소유권은 해당 작업에서만 정한다.
+
+## Legacy 호환
+
+`harness/`와 phase 관련 scripts/templates는 기존 프로젝트용으로 유지한다.
+`PromptBuilder`는 기본 CLI의 지침 자동 로딩을 활용하고 누락된 규칙만 읽도록 안내한다. 사용자 정의 백엔드는 inline 주입을 지원한다. 전체 manifest·누적 step 요약을 자동 주입하지 않는다.
+문서, 모듈 계약, baseline은 해당 step에서 필요할 때 읽는다.
+배치 실행기는 정상 종료, step 상태와 검증 근거를 확인한다. checks를 지정하면 직접 실행한다. 실패에는 원인과 재개 방법을 기록하고, 진전 없는 재시도를 중단한다. Git 자동 관리 시 기존 변경이 없는지 확인하며 상태 JSON은 원자적으로 저장한다. 프로젝트 CI나 백엔드 도구 권한을 대체하지 않는다.
+자세한 사용법은 `docs/LEGACY.md`에 있다.
+
+## Hooks
+
+`.claude/settings.json`과 `.codex/hooks.json`의 hooks는 비어 있다.
+응답 종료 시 자동 전체 검증과 환경 변수 기반 명령 차단을 사용하지 않는다.

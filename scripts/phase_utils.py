@@ -72,6 +72,10 @@ def scaffold_phase(
     template_root: Path | None = None,
     force: bool = False,
 ):
+    # Refuse before writing anything: an existing phase may contain completed
+    # work even if the caller supplied a different list of step names.
+    if (root / "phases" / phase_dir_name).exists():
+        raise FileExistsError(f"phase already exists; preserve its records: {phase_dir_name}")
     phases_dir = root / "phases"
     phases_dir.mkdir(parents=True, exist_ok=True)
     (phases_dir / "baselines").mkdir(parents=True, exist_ok=True)
@@ -80,10 +84,10 @@ def scaffold_phase(
 
     top_index_path = phases_dir / "index.json"
     top_index, error = read_json_file(top_index_path)
+    if error and top_index_path.exists():
+        raise ValueError(error)
     if top_index is None:
         top_index = {"phases": []}
-    elif error:
-        raise ValueError(error)
 
     if not any(item.get("dir") == phase_dir_name for item in top_index.get("phases", [])):
         top_index.setdefault("phases", []).append({"dir": phase_dir_name, "status": "pending"})

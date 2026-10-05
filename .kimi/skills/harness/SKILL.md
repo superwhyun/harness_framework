@@ -1,29 +1,16 @@
 ---
 name: harness
-description: Continue work in this repository using the canonical harness workflow and phase files.
+description: Plan, develop and resume scoped coding units in the current session using one task record.
 ---
 
-Read these files first:
-
-- `AGENTS.md`
-- `docs/HARNESS.md`
-- `docs/PRD.md`
-- `docs/ARCHITECTURE.md`
-- `docs/ADR.md`
-
-Then inspect the current `phases/` state.
-
-Target project resolution:
-
-1. Use a project path appended by the user when present.
-2. Otherwise read `.harness/current_project`.
-3. If neither exists or the value is empty, ask the user for the target project path.
-
-Rules:
-
-1. Continue from the first `pending` step in the active phase of the target project.
-2. Only work on one step at a time.
-3. Do not invent missing context from previous conversations.
-4. Use `module-map.json`, `phases/baselines/{phase-dir}.json`, and public contracts as the primary inputs for each step.
-
-If the user appended extra instructions after `/skill:harness`, apply them as additional constraints.
+Apply the user's request in the current session with already-loaded target project rules.
+Small changes need no scaffold. For substantial work use an existing plan or tasks/{task}.md
+with goal/design and each unit's scope, acceptance criteria, dependencies, checks and status.
+Implement and verify one ready unit, commit its changes and progress record, then proceed.
+Group small steps that cannot work independently. At phase end verify integration and commit only additional changes.
+Include only the current work, respecting target policy and explicit user instructions. Push and tags require a separate request.
+Do not put the whole feature into one implementation unit or launch another model CLI/session.
+Optional scripts/scaffold_task.py only creates a document. Read docs/HARNESS.md only when needed.
+Resume existing task or phase records without overwriting history. Record verification and next action before handoff.
+Repeat passed checks only after relevant changes or new concerns. Do not limit execution to one unit per session.
+Prefer the user's target path. Consult .harness/current_project only when selecting another project here.

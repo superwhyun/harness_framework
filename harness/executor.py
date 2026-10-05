@@ -3,16 +3,19 @@ import sys
 import threading
 import time
 import types
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, List
 import contextlib
 
 from .backends.base import AgentBackend, BackendResult
-from .backends.generic import GenericCommandBackend
+from .backends.generic import GenericCommandBackend, diagnostic
 from .git_manager import GitManager
 from .prompt_builder import PromptBuilder
 from .manifest import update_project_manifest
+from .process import run_command
+from .state import write_json
 
 
 @contextlib.contextmanager
@@ -31,14 +34,16 @@ def progress_indicator(label: str):
         sys.stderr.write("\r" + " " * (len(label) + 20) + "\r")
         sys.stderr.flush()
 
-    th = threading.Thread(target=_animate, daemon=True)
-    th.start()
+    th = threading.Thread(target=_animate, daemon=True) if sys.stderr.isatty() else None
+    if th:
+        th.start()
     info = types.SimpleNamespace(elapsed=0.0)
     try:
         yield info
     finally:
         stop.set()
-        th.join()
+        if th:
+            th.join()
         info.elapsed = time.monotonic() - t0
 
 
@@ -55,11 +60,11 @@ class StepExecutor:
 
     DEFAULT_BACKENDS = {
         "claude": {
-            "command": ["claude", "-p", "--output-format", "json", "{prompt}"],
+            "command": ["claude", "-p", "--permission-mode", "acceptEdits", "--output-format", "json", "{prompt}"],
             "guardrail_files": _COMMON_GUARDRAILS + ["CLAUDE.md"],
         },
         "codex": {
-            "command": ["codex", "exec", "--json", "{prompt}"],
+            "command": ["codex", "exec", "--json", "--sandbox", "workspace-write", "{prompt}"],
             "guardrail_files": _COMMON_GUARDRAILS,
         },
         "gemini": {
@@ -99,15 +104,22 @@ class StepExecutor:
         *,
         backend_name: Optional[str] = None,
         auto_push: bool = False,
+        auto_commit: bool = True,
         framework_root: Optional[Path] = None,
     ):
+        if Path(phase_dir_name).name != phase_dir_name or phase_dir_name in {"", ".", ".."}:
+            raise ValueError("phase directory must be a single directory name")
         self._root = str(root)
         self._framework_root = str(framework_root or root)
         self._phases_dir = root / "phases"
         self._phase_dir = self._phases_dir / phase_dir_name
         self._phase_dir_name = phase_dir_name
         self._top_index_file = self._phases_dir / "index.json"
+        self._index_file = self._phase_dir / "index.json"
         self._auto_push = auto_push
+        self._auto_commit = auto_commit
+        if auto_push and not auto_commit:
+            raise ValueError("--push cannot be combined with --no-commit")
         self._harness_settings = self._load_harness_settings()
         self._backend = self._resolve_backend(backend_name)
         self._git = GitManager(self._root)
@@ -117,7 +129,6 @@ class StepExecutor:
             print(f"ERROR: {self._phase_dir} not found")
             sys.exit(1)
 
-        self._index_file = self._phase_dir / "index.json"
         if not self._index_file.exists():
             print(f"ERROR: {self._index_file} not found")
             sys.exit(1)
@@ -126,13 +137,26 @@ class StepExecutor:
         self._project = idx.get("project", "project")
         self._phase_name = idx.get("phase", phase_dir_name)
         self._total = len(idx["steps"])
+        self._validate_index(idx)
+        execution = self._harness_settings.get("execution", {})
+        if not isinstance(execution, dict):
+            raise ValueError("execution must be an object")
+        self._max_attempts = execution.get("max_attempts", self.MAX_RETRIES)
+        self._timeout = execution.get("timeout_seconds", self.COMMAND_TIMEOUT)
+        if any(type(value) is not int or value < 1 for value in (self._max_attempts, self._timeout)):
+            raise ValueError("execution max_attempts and timeout_seconds must be positive integers")
 
     def run(self):
         self._print_header()
+        self._check_stop()
         self._check_blockers()
-        self._git.checkout(f"feat-{self._phase_name}")
+        self._git.current_branch()
+        if self._auto_commit:
+            self._git.require_clean()
+            self._git.checkout(f"feat-{self._phase_name}")
         guardrails = self._prompt.load_guardrails(
-            Path(self._root), Path(self._framework_root), self._backend.guardrail_files
+            Path(self._root), Path(self._framework_root), self._backend.guardrail_files,
+            getattr(self._backend, "instruction_mode", "inline"),
         )
         manifest_context = self._prompt.load_project_manifest(self._phases_dir)
         self._ensure_created_at()
@@ -141,11 +165,14 @@ class StepExecutor:
 
     @staticmethod
     def _read_json(p: Path) -> dict:
-        return json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(f"{p} must contain a JSON object")
+        return data
 
     @staticmethod
     def _write_json(p: Path, data: dict):
-        p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        write_json(p, data)
 
     def _stamp(self) -> str:
         return datetime.now(self.TZ).strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -175,7 +202,8 @@ class StepExecutor:
         return GenericCommandBackend(
             name=target,
             command_template=config_data["command"],
-            guardrail_files=config_data.get("guardrail_files", [])
+            guardrail_files=config_data.get("guardrail_files", []),
+            instruction_mode=config_data.get("instruction_mode", "inline"),
         )
 
     def _get_backend_configs(self) -> dict:
@@ -183,76 +211,187 @@ class StepExecutor:
             configs = self.DANGEROUS_BACKENDS.copy()
         else:
             configs = self.DEFAULT_BACKENDS.copy()
+        configs = {name: {**data, "instruction_mode": "native"} for name, data in configs.items()}
         custom_backends = self._harness_settings.get("backends", {})
+        if not isinstance(custom_backends, dict):
+            raise ValueError("backends must be an object")
         for name, data in custom_backends.items():
-            if "command" in data:
-                configs[name] = data
+            if not isinstance(data, dict):
+                raise ValueError(f"backend {name} must be an object")
+            configs[name] = {**configs.get(name, {}), **data}
+            # A replacement command may not have the built-in CLI's instruction loader.
+            if "command" in data and "instruction_mode" not in data:
+                configs[name]["instruction_mode"] = "inline"
+            if "command" not in configs[name]:
+                raise ValueError(f"backend {name} requires command")
         return configs
+
+    @staticmethod
+    def _validate_index(index: dict):
+        steps = index.get("steps")
+        if not isinstance(steps, list) or not steps:
+            raise ValueError("phase must contain a non-empty steps array")
+        ids = [step.get("step") for step in steps if isinstance(step, dict)]
+        if len(ids) != len(steps) or any(type(i) is not int or i < 0 for i in ids) or len(set(ids)) != len(ids):
+            raise ValueError("step IDs must be unique non-negative integers")
+        for step in steps:
+            if step.get("status") not in {"pending", "completed", "error", "blocked"}:
+                raise ValueError(f"Invalid status for step {step['step']}")
+            refs = step.get("depends_on", [])
+            if not isinstance(refs, list) or any(type(i) is not int or i not in ids or i == step["step"] for i in refs):
+                raise ValueError(f"Invalid depends_on for step {step['step']}")
+            checks = step.get("checks", [])
+            if not isinstance(checks, list) or any(
+                not isinstance(cmd, list) or not cmd or not all(isinstance(arg, str) and arg for arg in cmd)
+                for cmd in checks
+            ):
+                raise ValueError(f"checks for step {step['step']} must be an array of argv arrays")
+
+    def _check_stop(self):
+        if (self._phases_dir / "STOP").exists():
+            raise RuntimeError("phases/STOP exists. Work is preserved; remove it to resume.")
+
+    def _fail_step(self, step_num: int, message: str, *, blocked: bool = False):
+        index = self._read_json(self._index_file)
+        step = next(s for s in index["steps"] if s["step"] == step_num)
+        step["status"] = "blocked" if blocked else "error"
+        step["blocked_reason" if blocked else "error_message"] = message
+        step["next_action"] = "Resolve the cause, review existing changes, set this step to pending, then resume (use --no-commit for a dirty tree)."
+        index.pop("completed_at", None)
+        self._write_json(self._index_file, index)
+        raise RuntimeError(f"Step {step_num}: {message}")
+
+    def _run_checks(self, checks: list[list[str]]) -> tuple[list[dict], Optional[str]]:
+        evidence = []
+        for command in checks:
+            self._check_stop()
+            try:
+                result = run_command(command, cwd=self._root, timeout=self._timeout)
+                evidence.append({"command": command, "exit_code": result.returncode,
+                                 "output": (result.stderr or result.stdout)[-2000:]})
+                if result.returncode:
+                    return evidence, f"Check failed: {command!r}\n{evidence[-1]['output']}"
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                evidence.append({"command": command, "error": str(exc)})
+                return evidence, f"Check could not complete: {command!r}: {exc}"
+        return evidence, None
 
     def _execute_single_step(self, step: dict, guardrails: str, manifest_context: str):
         step_num, step_name = step["step"], step["name"]
-        done = sum(1 for s in self._read_json(self._index_file)["steps"] if s["status"] == "completed")
+        checks = step.get("checks", [])
         prev_error = None
-
-        for attempt in range(1, self.MAX_RETRIES + 1):
+        for attempt in range(1, self._max_attempts + 1):
+            self._check_stop()
             index = self._read_json(self._index_file)
-            step_context = self._prompt.build_step_context(index)
+            self._validate_index(index)
+            current_step = next(s for s in index["steps"] if s["step"] == step_num)
+            # Evidence belongs to the current attempt, not an earlier failed run.
+            current_step.pop("verification", None)
+            self._write_json(self._index_file, index)
             preamble = self._prompt.build_preamble(
-                project=self._project,
-                phase_name=self._phase_name,
-                phase_dir_name=self._phase_dir_name,
-                backend_name=self._backend.name,
-                guardrails=guardrails,
-                manifest_context=manifest_context,
-                step_context=step_context,
-                prev_error=prev_error,
-                feat_msg_template=self.FEAT_MSG,
+                project=self._project, phase_name=self._phase_name, phase_dir_name=self._phase_dir_name,
+                backend_name=self._backend.name, guardrails=guardrails, manifest_context=manifest_context,
+                step_context=self._prompt.build_step_context(index, current_step),
+                prev_error=prev_error, feat_msg_template=self.FEAT_MSG,
             )
+            prompt = preamble + (self._phase_dir / f"step{step_num}.md").read_text(encoding="utf-8")
+            before = self._git.progress_digest()
+            tag = f"Step {step_num}: {step_name} (attempt {attempt}/{self._max_attempts})"
+            try:
+                with progress_indicator(tag) as pi:
+                    result = self._backend.invoke(prompt, cwd=self._root, timeout=self._timeout)
+            except KeyboardInterrupt:
+                self._fail_step(step_num, "Interrupted. Inspect partial changes before resuming.")
+            elapsed = round(pi.elapsed, 2)
+            updated = self._read_json(self._index_file)
+            self._validate_index(updated)
+            by_id = {s["step"]: s for s in updated["steps"]}
+            # Do not allow a model to weaken gates or skip other work through bookkeeping.
+            violations = []
+            for old in index["steps"]:
+                new = by_id.get(old["step"])
+                if new is None:
+                    updated["steps"].append(old)
+                    violations.append("existing step removed")
+                    continue
+                for key in ("checks", "depends_on"):
+                    if new.get(key, []) != old.get(key, []):
+                        new[key] = old.get(key, [])
+                        violations.append(f"{key} changed")
+                if old["step"] != step_num and new["status"] == "completed" and old["status"] != "completed":
+                    new["status"] = old["status"]
+                    violations.append("another step marked completed")
+            for new in updated["steps"]:
+                if new["step"] not in {s["step"] for s in index["steps"]} and new["status"] == "completed":
+                    new["status"] = "pending"
+                    violations.append("new step marked completed without execution")
+            current = next(s for s in updated["steps"] if s["step"] == step_num)
+            reported_status = current["status"]
+            if reported_status == "completed":
+                current["status"] = "pending"  # completion is not durable until gates pass
+            current["last_attempt"] = {"attempt": attempt, "at": self._stamp(), "exit_code": result.exit_code, "elapsed_seconds": elapsed}
+            self._write_json(self._index_file, updated)
+            if violations:
+                self._fail_step(step_num, "Invalid progress update: " + ", ".join(sorted(set(violations))))
+            if reported_status in {"blocked", "error"}:
+                self._fail_step(step_num, current.get("blocked_reason") or current.get("error_message") or "Agent reported failure.",
+                                blocked=current["status"] == "blocked")
 
-            tag = f"Step {step_num}/{self._total - 1} ({done} done): {step_name}"
-            if attempt > 1:
-                tag += f" [retry {attempt}/{self.MAX_RETRIES}]"
+            error = None
+            if result.exit_code:
+                error = f"Backend exited {result.exit_code}: {diagnostic(result.stdout, result.stderr)}"
+            elif reported_status != "completed":
+                error = "Agent ended without completing the step. " + diagnostic(result.stdout, result.stderr)
+            elif not isinstance(current.get("summary"), str) or not current["summary"].strip():
+                error = "Completed step is missing summary."
+            elif checks:
+                try:
+                    evidence, error = self._run_checks(checks)
+                except KeyboardInterrupt:
+                    self._fail_step(step_num, "Interrupted during verification. Rerun checks before completing.")
+                current["verification"] = {"status": "failed" if error else "passed", "source": "executor", "checks": evidence}
+            else:
+                verification = current.get("verification", {})
+                if not isinstance(verification, dict) or verification.get("status") != "passed" or not isinstance(verification.get("details"), str) or not verification["details"].strip():
+                    error = "Completed step needs verification.status=passed and non-empty verification.details, or configured checks."
 
-            with progress_indicator(tag) as pi:
-                step_file = self._phase_dir / f"step{step_num}.md"
-                prompt = preamble + step_file.read_text(encoding="utf-8")
-                result = self._backend.invoke(prompt, cwd=self._root, timeout=self.COMMAND_TIMEOUT)
-                elapsed = int(pi.elapsed)
-
-            index = self._read_json(self._index_file)
-            status = next((s["status"] for s in index["steps"] if s["step"] == step_num), "pending")
-
-            if status == "completed":
+            if error is None:
+                current["status"] = "completed"
+                current.pop("error_message", None)
+                current.pop("blocked_reason", None)
+                current.pop("next_action", None)
+                released = self._release_blocked_steps(updated, current)
+                if released:
+                    current["unblocked_steps"] = released
+                self._write_json(self._index_file, updated)
+                if self._auto_commit:
+                    self._git.commit_all(self.FEAT_MSG.format(project=self._project, num=step_num, name=step_name))
                 print(f"  ✓ Step {step_num}: {step_name} [{elapsed}s]")
-                current_step = next((s for s in index["steps"] if s["step"] == step_num), step)
-                released_steps = self._release_blocked_steps(index, current_step)
-                if released_steps:
-                    current_step["unblocked_steps"] = released_steps
-                    self._write_json(self._index_file, index)
-                self._git.commit_all(self.FEAT_MSG.format(project=self._project, num=step_num, name=step_name))
                 return True
 
-            if status == "blocked":
-                print(f"  ✗ Step {step_num} set itself to blocked. Append a blocking-fix step to index.json and re-run.")
-                sys.exit(1)
-
-            if attempt == self.MAX_RETRIES:
-                print(f"  ✗ Step {step_num} failed after {self.MAX_RETRIES} attempts.")
-                sys.exit(1)
-
-            if result.stderr.strip():
-                prev_error = result.stderr.strip()[:500]
-            elif result.stdout.strip():
-                prev_error = result.stdout.strip()[:500]
-            else:
-                prev_error = f"Step did not complete (exit code {result.exit_code}). No output captured."
+            current["status"] = "pending"
+            current["last_attempt"]["error"] = error
+            self._write_json(self._index_file, updated)
+            progressed = self._git.progress_digest() != before
+            kind = getattr(result, "failure_kind", None)
+            retryable = kind == "transient" or progressed
+            if kind in {"configuration", "timeout"} or not retryable or attempt == self._max_attempts:
+                self._fail_step(step_num, error)
+            prev_error = error
+            if kind == "transient":
+                time.sleep(min(2 ** attempt, 30))
 
     def _execute_all_steps(self, guardrails: str, manifest_context: str):
         while True:
+            self._check_stop()
             index = self._read_json(self._index_file)
+            self._validate_index(index)
+            self._check_blockers()
             pending = self._select_next_step(index)
             if pending is None:
-                break
+                if any(s["status"] != "completed" for s in index["steps"]):
+                    raise RuntimeError("Unfinished steps have unresolved dependencies or blockers. Inspect index.json.")
+                return
             self._execute_single_step(pending, guardrails, manifest_context)
 
     def _print_header(self):
@@ -273,8 +412,10 @@ class StepExecutor:
 
     @staticmethod
     def _pending_blocking_fix(index: dict) -> Optional[dict]:
+        completed = {step["step"] for step in index["steps"] if step.get("status") == "completed"}
         for s in index["steps"]:
-            if s.get("status") == "pending" and s.get("kind") == "blocking-fix":
+            if (s.get("status") == "pending" and s.get("kind") == "blocking-fix"
+                    and all(ref in completed for ref in s.get("depends_on", []))):
                 return s
         return None
 
@@ -283,7 +424,9 @@ class StepExecutor:
         blocking_fix = cls._pending_blocking_fix(index)
         if blocking_fix is not None:
             return blocking_fix
-        return next((s for s in index["steps"] if s.get("status") == "pending"), None)
+        completed = {s["step"] for s in index["steps"] if s.get("status") == "completed"}
+        return next((s for s in index["steps"] if s.get("status") == "pending"
+                     and all(ref in completed for ref in s.get("depends_on", []))), None)
 
     @staticmethod
     def _normalize_step_refs(value) -> List[int]:
@@ -321,12 +464,17 @@ class StepExecutor:
 
     def _finalize(self):
         index = self._read_json(self._index_file)
-        index["completed_at"] = self._stamp()
+        self._validate_index(index)
+        if any(s["status"] != "completed" for s in index["steps"]):
+            raise RuntimeError("Cannot finalize a phase with unfinished steps.")
+        index.setdefault("completed_at", self._stamp())
         self._write_json(self._index_file, index)
         baseline = self._write_phase_baseline(index)
         if baseline:
             update_project_manifest(self._phases_dir, self._phase_dir_name, baseline)
         self._update_top_index()
+        if self._auto_commit:
+            self._git.commit_all(f"chore({self._project}): finalize {self._phase_name}")
         print(f"\n  ✓ Phase '{self._phase_name}' completed!")
         if self._auto_push:
             self._git.push(f"feat-{self._phase_name}")
@@ -336,7 +484,7 @@ class StepExecutor:
         baseline_dir.mkdir(parents=True, exist_ok=True)
         baseline_path = baseline_dir / f"{self._phase_dir_name}.json"
         if baseline_path.exists():
-            return None
+            return self._read_json(baseline_path)
 
         module_map_path = self._phase_dir / "module-map.json"
         module_map = {}
@@ -344,7 +492,7 @@ class StepExecutor:
             try:
                 module_map = self._read_json(module_map_path)
             except (OSError, json.JSONDecodeError) as exc:
-                print(f"  WARN: could not read module-map for baseline: {exc}")
+                raise ValueError(f"Cannot create baseline from unreadable module-map: {exc}") from exc
 
         source_module_map = None
         if module_map_path.exists():
@@ -355,7 +503,7 @@ class StepExecutor:
             "project": self._project,
             "phase": self._phase_dir_name,
             "phase_name": self._phase_name,
-            "tag": f"{self._project}-{self._phase_dir_name}-done",
+            "tag": None,
             "source_module_map": source_module_map,
             "modules": module_map.get("modules", []),
             "routes": [],
@@ -386,4 +534,4 @@ class StepExecutor:
                     break
             self._write_json(top_path, top_index)
         except (OSError, json.JSONDecodeError) as exc:
-            print(f"  WARN: could not update top index: {exc}")
+            raise ValueError(f"Could not update top index: {exc}") from exc

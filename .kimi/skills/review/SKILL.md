@@ -1,28 +1,8 @@
 ---
 name: review
-description: Review current changes in this repository using the canonical review workflow.
+description: Review changes for concrete bugs, regressions and missing verification.
 ---
 
-Read these files first:
-
-- `AGENTS.md`
-- `docs/REVIEW.md`
-- `docs/ARCHITECTURE.md`
-- `docs/ADR.md`
-
-Then inspect the current diff and produce a findings-first review.
-
-Target project resolution:
-
-1. Use a project path appended by the user when present.
-2. Otherwise read `.harness/current_project`.
-3. If neither exists or the value is empty, ask the user for the target project path.
-
-Rules:
-
-1. Focus on bugs, regressions, risky assumptions, and missing verification.
-2. Point to concrete files and locations when possible.
-3. If no issues are found, state that explicitly.
-4. Keep the review aligned with the current phase/step.
-
-If the user appended extra instructions after `/skill:review`, apply them as additional review scope.
+Read target AGENTS.md and the relevant diff and code. Read docs/REVIEW.md only when needed.
+Report findings first with locations and impact; explicitly state when no issues were found.
+Do not change code for a review-only request. Apply the user's specified target and scope.

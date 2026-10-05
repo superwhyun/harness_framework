@@ -1,17 +1,6 @@
-description = "Review changes using the project's canonical review workflow."
+description = "Review changes for bugs, regressions and missing verification."
 prompt = """
-Review the current changes using the project review workflow.
-
-Start with:
-- @{AGENTS.md}
-- @{docs/REVIEW.md}
-- @{docs/ARCHITECTURE.md}
-- @{docs/ADR.md}
-
-Then inspect the current diff and produce findings-first review output.
-Target project resolution:
-- Use a project path appended by the user when present.
-- Otherwise read `.harness/current_project`.
-- If neither exists or the value is empty, ask the user for the target project path.
-If the user appended extra arguments to this command, treat them as additional review scope.
+Apply target project rules already in context; read missing instructions, the relevant diff and code. Read docs/REVIEW.md only when needed.
+Report findings first with locations and impact. Do not modify code for a review-only request.
+Apply the user's specified target and scope.
 """

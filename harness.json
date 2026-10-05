@@ -1,26 +1,5 @@
 {
   "project": "harness-framework",
   "default_backend": "claude",
-  "dangerous_mode": false,
-  "backends": {
-    "claude": {
-      "command": ["claude", "-p", "--output-format", "json", "{prompt}"],
-      "guardrail_files": ["CLAUDE.md"]
-    },
-    "codex": {
-      "command": ["codex", "exec", "--json", "{prompt}"],
-      "guardrail_files": []
-    },
-    "gemini": {
-      "command": ["gemini", "--output-format", "json", "{prompt}"],
-      "guardrail_files": []
-    },
-    "kimi": {
-      "command": ["kimi", "--output-format", "stream-json", "-p", "{prompt}"],
-      "guardrail_files": []
-    }
-  },
-  "context": {
-    "common_files": ["AGENTS.md", "docs/*.md"]
-  }
+  "dangerous_mode": false
 }

@@ -1,18 +1,13 @@
-description = "Run the project harness workflow using the canonical docs."
+description = "Plan and resume scoped coding units in the current session."
 prompt = """
-Read the project instructions and run the harness workflow.
-
-Start with:
-- @{AGENTS.md}
-- @{docs/HARNESS.md}
-- @{docs/PRD.md}
-- @{docs/ARCHITECTURE.md}
-- @{docs/ADR.md}
-
-If there is an active phase, inspect the current files under `phases/` and continue from the first pending step.
-Target project resolution:
-- Use a project path appended by the user when present.
-- Otherwise read `.harness/current_project`.
-- If neither exists or the value is empty, ask the user for the target project path.
-If the user appended extra arguments to this command, treat them as additional instructions.
+Apply the user's request in the current session using target project rules already loaded.
+Small changes need no scaffold. For substantial work use an existing plan or one tasks/{task}.md:
+record goal/design and each unit's scope, acceptance criteria, dependencies, checks and status.
+Implement and verify one ready unit, commit its changes and progress record, then proceed.
+Group small steps that cannot work independently. At phase end verify integration and commit only additional changes.
+Include only the current work, respecting target policy and explicit user instructions. Push and tags require a separate request.
+Do not put the whole feature into one implementation unit or launch another model CLI/session.
+Optional scripts/scaffold_task.py only creates a document. Read docs/HARNESS.md only when needed.
+Resume existing task or phase records, preserving history. Update verification and next action before handoff.
+Prefer the user's target path; consult .harness/current_project only when selecting another project here.
 """

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from .state import write_json
 
 _TZ = timezone(timedelta(hours=9))
 
@@ -31,10 +32,18 @@ def update_project_manifest(phases_dir: Path, phase_dir_name: str, baseline: dic
     if manifest_path.exists():
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            manifest = _empty_manifest(baseline.get("project", "unknown"))
+        except (json.JSONDecodeError, OSError) as exc:
+            raise ValueError(f"Existing manifest cannot be read; preserved without overwriting: {manifest_path}") from exc
     else:
         manifest = _empty_manifest(baseline.get("project", "unknown"))
+    if not isinstance(manifest, dict):
+        raise ValueError("Existing manifest must be an object; preserved without overwriting")
+    for key in ("modules", "routes", "shared_contracts", "integration_points", "known_issues", "phase_history"):
+        if not isinstance(manifest.setdefault(key, []), list):
+            raise ValueError(f"Existing manifest {key} must be an array")
+    # Replaying finalization after a failed commit must not duplicate or roll back metadata.
+    if any(isinstance(item, dict) and item.get("phase") == phase_dir_name for item in manifest["phase_history"]):
+        return
 
     # Modules — update by name (last phase wins)
     modules_by_name = {
@@ -96,11 +105,12 @@ def update_project_manifest(phases_dir: Path, phase_dir_name: str, baseline: dic
         elif isinstance(issue, str):
             manifest["known_issues"].append({"description": issue, "phase": phase_dir_name})
 
-    manifest.setdefault("phase_history", []).append({
-        "phase": phase_dir_name,
-        "tag": baseline.get("tag", ""),
-        "completed_at": baseline.get("completed_at", ""),
-    })
+    if not any(item.get("phase") == phase_dir_name for item in manifest.setdefault("phase_history", [])):
+        manifest["phase_history"].append({
+            "phase": phase_dir_name,
+            "tag": baseline.get("tag"),
+            "completed_at": baseline.get("completed_at", ""),
+        })
     manifest["updated_at"] = _stamp()
 
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_json(manifest_path, manifest)

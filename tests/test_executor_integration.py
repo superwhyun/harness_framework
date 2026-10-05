@@ -75,6 +75,7 @@ def test_step_executor_runs_pending_steps():
             if s["status"] == "pending":
                 s["status"] = "completed"
                 s["summary"] = "done"
+                s["verification"] = {"status": "passed", "details": "mock test completed"}
                 break
         (root / "phases" / "0-test" / "index.json").write_text(
             json.dumps(idx), encoding="utf-8"
@@ -93,7 +94,7 @@ def test_step_executor_retry_on_failure():
     root = _make_project("0-retry", ["step-a"])
     (root / "CLAUDE.md").write_text("# Claude\n", encoding="utf-8")
     executor = StepExecutor(root=root, phase_dir_name="0-retry", backend_name="claude")
-    executor.MAX_RETRIES = 2
+    executor._max_attempts = 2
 
     call_count = 0
 
@@ -101,11 +102,12 @@ def test_step_executor_retry_on_failure():
         nonlocal call_count
         call_count += 1
         if call_count < 2:
-            return BackendResult(backend="mock", command=[], exit_code=1, stdout="", stderr="error")
+            return BackendResult(backend="mock", command=[], exit_code=1, stdout="", stderr="temporarily unavailable", failure_kind="transient")
         # Second attempt succeeds
         idx = json.loads((root / "phases" / "0-retry" / "index.json").read_text(encoding="utf-8"))
         idx["steps"][0]["status"] = "completed"
         idx["steps"][0]["summary"] = "done"
+        idx["steps"][0]["verification"] = {"status": "passed", "details": "mock test completed"}
         (root / "phases" / "0-retry" / "index.json").write_text(json.dumps(idx), encoding="utf-8")
         return BackendResult(backend="mock", command=[], exit_code=0, stdout="ok", stderr="")
 

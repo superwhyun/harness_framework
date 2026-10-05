@@ -4,6 +4,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from unittest.mock import patch
+
+from scripts.smoke_backends import run_help_check
 
 
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "smoke_backends.py"
@@ -25,3 +28,11 @@ def test_backend_help_smoke():
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_missing_interpreter_is_reported_without_traceback(tmp_path):
+    with patch("scripts.smoke_backends.shutil.which", return_value="/bin/kimi"), patch(
+        "scripts.smoke_backends.subprocess.run", side_effect=FileNotFoundError("missing interpreter")
+    ):
+        assert run_help_check("kimi", tmp_path, skip_unavailable=True) == []
+        assert "cannot launch" in run_help_check("kimi", tmp_path)[0]

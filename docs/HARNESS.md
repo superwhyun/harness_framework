@@ -1,159 +1,74 @@
-# Harness Workflow
+# Harness workflow
 
-이 문서는 이 저장소의 범용 하네스 워크플로우 원문이다.
-Claude Code, Gemini CLI, Kimi Code CLI, Codex 모두 이 문서를 기준으로 작업해야 한다.
+이 하네스는 현재 Claude·Codex 세션에 적용하는 작업 방식과 재개 기록이다.
+코드 탐색·편집·테스트·수정·컨텍스트 관리는 도구의 기본 기능을 사용한다.
+하네스가 모델 CLI를 새로 호출하거나 세션을 단위마다 초기화하지 않는다.
 
-## 목표
-- 작업을 step 단위로 분해한다.
-- step 상태를 파일로 관리한다.
-- 자동 반복은 최대 3회 재시도로 제한한다.
-- 후속 step은 이전 구현 전체 대신 baseline, module-map, public contract를 우선 읽어 토큰 사용을 줄인다.
-- 코드 품질을 위해 필요한 경우에는 영향 모듈만 targeted read 하고, 수정은 별도 fix/change step으로 분리한다.
+## 계획과 단위별 개발
 
-## 실행 순서
+작은 수정은 바로 구현·검증한다. 여러 구현 경계가 있는 큰 작업은 `tasks/{task}.md` 하나에
+목표·설계·실행 단위를 기록한다. 리뷰·설계만 요청한 경우는 구현으로 넘어가지 않는다.
 
-### 대상 프로젝트 결정
+1. 목표 동작과 기존 공개 계약을 확인하고 변경 경계·데이터 흐름·실패 처리를 설계한다.
+2. 검증 가능한 결과 단위로 분해한다. 단위마다 범위와 결과물, 선행 단위, 완료 조건, 검증 방법, 상태를 명시한다. 파일 하나마다 쪼개거나 전체 기능을 한 구현 단위로 몰지 않는다. 규모가 크면 같은 문서에서 phase로 묶을 수 있다.
+3. 준비된 단위를 in_progress로 바꾸고 **현재 세션에서** 관련 구현·진단·검증을 수행한다. 도구의 내부 계획은 현재 단위를 더 세분화하는 데 사용할 수 있다. 같은 전체 작업의 상태를 두 계획에 복제하지 않는다.
+4. 실제 검증 결과와 구현 요약을 기록하고 통과한 단위를 completed로 바꾼 뒤 후속 단위를 진행한다. 실패한 단위를 완료로 표시하지 않는다. 진행이 막히면 원인·남은 문제·재개 조건을 남긴다.
+5. 마지막 단위에서 전체 기능의 통합과 실제 사용자 경로를 검증한다. 로컬/mock 통과·외부 확인·미실행·실패를 구분한다. 요청 범위의 완료 조건까지 확인해야 전체 작업을 완료한다.
 
-하네스 프레임워크에서 작업할 때는 먼저 대상 프로젝트를 정한다.
+한 세션에 여러 단위를 계속 진행할 수 있다. 단위마다 사용자 확인이나 세션 교체를 요구하지 않는다.
+명시적 범위·의존 관계·검증 결과는 작업을 한 번에 뭉뚱그려 처리하지 않도록 하는 기준이다.
+이는 현재 에이전트가 따르는 절차이며 외부 실행기의 강제 게이트는 아니다.
 
-1. 사용자가 명시한 프로젝트 경로를 우선 사용한다.
-2. 없으면 `.harness/current_project` 값을 읽는다.
-3. 둘 다 없거나 비어 있으면 사용자에게 대상 프로젝트 경로를 물어본다.
+## 요청과 선택적 스캐폴드
 
-대상 프로젝트는 반드시 `projects/{project-name}/` 아래에 생성한다.
-`phases/`는 항상 `projects/{project-name}/phases/` 경로에 위치해야 한다. 프레임워크 루트나 다른 경로에 생성하지 마라.
+현재 도구에 자연어로 요청한다.
 
-### A. 탐색 (Discovery)
+> 하네스로 로그인 기능을 설계하고 개발해. API·UI·통합 검증 등 실행 단위로 나누고, 각 단위를 검증한 뒤 순서대로 진행해.
 
-**CRITICAL — 탐색 전 필수 확인:**
-대상 프로젝트 디렉터리에 `phases/` 가 존재하면 **진행 중인 프로젝트**다.
-`package.json`이나 소스 코드가 없어도 마찬가지다.
-이 경우 scaffold를 재실행하거나 디렉터리를 삭제·초기화하지 마라.
-반드시 `phases/index.json`을 읽고 첫 `pending` step부터 이어서 진행한다.
-
-먼저 아래를 읽고 현재 상태를 파악한다.
-1. `AGENTS.md` (공통 규칙)
-2. `docs/ARCHITECTURE.md`, `docs/ADR.md`
-3. 대상 프로젝트의 `phases/index.json` 및 `phases/{task}/index.json`
-4. `phases/project-manifest.json` (있으면) — 전체 프로젝트 누적 현황
-5. 현재 phase의 `phases/{task}/module-map.json` (있으면)
-6. 현재 step의 `stepN.md`
-7. 직전 step output은 복구가 필요할 때만 읽는다.
-
-### B. 논의 (Discussion)
-구현 전에 결정이 더 필요한 사항이 있으면 사용자와 먼저 정리한다.
-
-새 기능 요청이 들어왔을 때 아래 조건 중 하나라도 해당하면 **반드시 새 phase를 설계하고 사용자 승인을 받은 뒤 실행한다**:
-- 현재 모든 phase가 `completed` 상태인 경우
-- 요청이 기존 phase 범위를 벗어난 새 기능인 경우
-
-사용자가 명시적으로 "phase 설계"를 언급하지 않아도 위 조건이 충족되면 AI가 먼저 phase 설계안을 제시한다.
-
-### C. Step 설계 (Planning)
-필요 시 `scripts/scaffold_phase.py`를 사용하여 페이즈를 설계한다.
+기존 관련 계획이 있으면 사용한다. 계획 파일은 직접 작성해도 된다. 반복적인 문서 틀이 필요하면
+아래 스캐폴드를 선택적으로 사용한다. 모델 호출·구현·테스트·Git 조작은 하지 않고 문서만 생성한다.
 
 ```bash
-# .harness/current_project가 설정된 경우
-python3 scripts/scaffold_phase.py {phase-dir} --project {name} --steps step1 step2 ...
-
-# 설정이 없는 경우 --root 명시
-python3 scripts/scaffold_phase.py {phase-dir} --project {name} --steps step1 step2 ... --root projects/{project-name}
+python3 /path/to/framework/scripts/scaffold_task.py login --root /path/to/repo --units api ui integration
 ```
 
-1. Scope를 최소화한다 (한 번에 한 스텝만).
-2. Step 0은 가능하면 `module-map.json`과 public contract 초안을 만든다.
-3. 각 step은 독립 세션에서도 이해 가능해야 한다.
-4. 각 step은 `owned_paths`, `read_contracts`, `forbidden_paths`를 명시한다.
-5. 후속 step은 의존 모듈의 구현 내부가 아니라 public contract를 기본 입력으로 삼는다.
-6. AC는 실행 가능한 명령으로 적는다.
-7. 현재 step을 막는 외부 contract/모듈 문제가 발견되면 현재 step을 `blocked`로 기록하고 `blocking-fix` 또는 `contract-change` step을 append한다.
-8. 현재 step을 막지 않는 개선사항은 phase 마지막에 `backlog-fix` step으로 append한다.
-9. 기존 step 번호는 재정렬하지 않는다. 새 step은 항상 append한다.
+`framework`는 이 저장소 또는 독립 설치된 skill/framework 디렉터리다.
+`--root`를 생략하면 현재 디렉터리를 사용하며 기존 파일을 덮어쓰지 않는다.
+단위 이름을 생략하면 implementation/integration 초안이다. 목표에 맞게 이름·범위·완료 조건·검증 방법을 채운다.
+스캐폴드의 선행 단위는 기본적으로 직전 단위이며 실제 의존 관계에 맞게 조정한다.
+사용자가 Python 명령을 직접 실행할 필요는 없다. 스킬을 사용하는 에이전트가 필요한 경우 생성한다.
 
-### D. 실행 (Execution)
-`pending` 상태인 스텝부터 이어서 작업한다.
-- `completed`면 다음 스텝으로 이동.
-- `blocked`면 이유를 기록한다. 단, pending `blocking-fix` step이 있으면 그 step을 먼저 수행한다.
-- `error`면 원인과 재개 힌트 남기고 중단.
-- 스텝당 최대 3회 재시도.
-- `blocking-fix` step 완료 후에는 `unblocks` 대상 step을 다시 `pending`으로 풀고 원래 흐름으로 돌아간다.
+## 재개와 계획 변경
 
-### E. Phase 마감 (Baseline)
+현재/새 세션에서 “하네스로 해당 작업 이어서 진행해”라고 요청한다.
+관련 task와 Git 상태·코드를 대조하고 현재 단위부터 이어간다. 이미 완료·검증한 내용을 다시 구현하지 않는다.
+동일 코드·환경에서 통과한 검사는 관련 변경이나 새로운 우려가 있을 때만 반복한다.
 
-phase 종료 시에는 다음 phase가 전체 구현을 다시 읽지 않도록 `phases/baselines/{phase-dir}.json`에 아래를 남긴다. 배치 실행기는 최소 baseline skeleton을 자동 생성하며, 에이전트는 필요한 경우 내용을 더 풍부하게 보강한다.
-- 완료 tag
-- 모듈 목록과 public surface
-- shared contracts
-- routes 또는 외부 진입점
-- integration points
-- known issues
+새 근거로 설계가 달라지면 같은 계획에 이유와 영향을 기록한다. 완료 단위의 구현·범위·검증이
+달라졌다면 영향받은 단위와 후속 의존 단위를 다시 검증한다. 중요한 범위 변경은 사용자와 정리한다.
+문서에는 현재 상태를 유지하고 대화나 실행 로그를 계속 누적하지 않는다.
+단위별 상태의 기준은 task 한 곳이다. 중요한 결정·미확인 사항·다음 행동도 같은 파일에 짧게 남긴다.
+관련 문서·코드만 필요한 만큼 읽으며 전체 문서나 누적 요약을 매 단위에 다시 주입하지 않는다.
 
-### F. Git 커밋 (Commit)
+## 커밋 기준
 
-커밋은 **step 단위**로 한다. phase 단위로 묶지 않는다.
+검증을 통과한 의미 있는 step의 구현과 진행 기록을 함께 커밋한 뒤 다음 단위를 진행한다.
+분리하면 동작하지 않는 작은 step은 하나의 동작 가능한 변경으로 묶어 검증·커밋한다.
+phase 종료 시 통합 검증을 수행하며 추가 변경이 있을 때만 커밋한다. 변경이 없으면 빈 커밋을 만들지 않는다.
+대상 저장소 정책과 사용자의 명시적 커밋 지시가 이 기본값보다 우선한다. push·태그는 별도 요청이 있을 때만 수행한다.
 
-**커밋 위치**: `projects/{project-name}/` 의 자체 git repo 안에서 실행한다.
-harness framework 루트에서 실행하면 `projects/`가 gitignore 대상이라 동작하지 않는다.
+커밋 전 diff와 staging 상태를 확인하고 현재 step에 해당하는 파일·변경 부분만 포함한다.
+기존의 무관한 사용자 변경을 전체 add로 섞지 않는다. 커밋 메시지는 해당 단위에서 완성한 동작을 설명한다.
+이미 검증한 내용은 커밋만 하려고 다시 검사하지 않는다. 커밋 실패나 Git 사용 불가 상태는
+구현·검증 결과와 구분해 다음 행동에 기록하고, 원인이 해결되면 완료한 구현을 반복하지 않고 커밋부터 재개한다.
 
-**`git init` 규칙**:
-- `git init`은 프로젝트 최초 생성 시(scaffold step) **딱 한 번만** 실행한다.
-- `.git` 디렉터리가 이미 존재하면 `git init`을 절대 재실행하지 마라.
-- 커밋 전에는 반드시 `git status`로 repo 존재 여부를 확인한다.
-- 이미 repo가 있는데 `git init`을 실행하면 기존 git 설정이 손상될 수 있다.
+## 기존 기록과 도구
 
-**`.gitignore` 규칙**:
-- `git init` 직후, 첫 `git add` 실행 전에 `.gitignore`를 반드시 작성한다.
-- `.gitignore` 없이 `git add .` 또는 `git add -A`를 실행하지 마라.
-- 반드시 포함해야 할 항목: `node_modules/`, `dist/`, `build/`, `.env*`, `.DS_Store`, `*.tsbuildinfo`, `.vercel`, `coverage/`, `__pycache__/`, `.venv/`
-- 기술 스택에 따라 추가 항목을 포함한다.
+기존 plain Markdown task, harness-plan JSON 기록, phases 이력은 보존한다.
+기록된 범위·완료 조건·미완료 단위를 읽어 현재 세션에서 이어간다. 새 형식으로 강제 변환하지 않는다.
+기존 phase는 해당 index와 pending step을 확인하고 실제 진행에 맞춰 갱신한다.
+같은 작업 상태를 task와 phase에 이중 기록하지 않는다.
 
-**커밋 시점**: AC를 통과한 직후.
-
-**커밋 메시지 형식**:
-```
-feat({project}/step{N}): {step-name} — {한 줄 요약}
-```
-
-예시:
-```
-feat(debate/step0): project-setup — package skeleton
-feat(debate/step2): llm-clients — 5 backends async
-feat(debate/step8): web-api — FastAPI routes + output.py
-```
-
-**phase 완료 시**: 마지막 step 커밋 후 태그를 단다.
-```bash
-git tag {project}-phase{N}-done
-# 예: git tag debate-phase0-done
-```
-
-**이유**:
-- step별 AC 통과 = 자연스러운 커밋 경계
-- 특정 step 실패 시 해당 step만 revert 가능
-- 다른 AI 툴이 이어받을 때 git log에서 진행 상태 파악 가능
-
-## 상태 파일 포맷
-- `phases/index.json`: 페이즈 목록 및 최상위 상태.
-- `phases/project-manifest.json`: 전체 프로젝트 누적 현황 (모듈, 라우트, 공유 계약, 통합 지점). Phase 완료 시 자동 업데이트.
-- `phases/{task}/index.json`: 스텝 목록 및 상태.
-- `phases/{task}/module-map.json`: 모듈 경계, 소유 step, owned paths, public contracts, dependencies.
-- `phases/{task}/stepN.md`: 실행 지시서.
-- `phases/baselines/{phase-dir}.json`: 완료 phase의 압축된 기준선.
-
-## CRITICAL: phases/ 보호 규칙
-
-`phases/` 디렉터리는 프로젝트의 구현 계획과 진행 상태를 담는 SSOT다.
-어떤 상황에서도 아래 행동은 금지한다:
-
-- 프로젝트 디렉터리(`projects/{project-name}/`) 삭제 또는 재생성
-- `phases/` 디렉터리 삭제 또는 재생성
-- 기존 `stepN.md` 파일 덮어쓰기 (이미 내용이 있는 경우)
-- `phases/index.json` 또는 `phases/{task}/index.json` 초기화
-
-**새 세션에서 작업을 시작할 때의 올바른 순서:**
-1. `phases/index.json` 읽기 → 전체 phase 상태 파악
-2. `phases/project-manifest.json` 읽기 (있으면) → 전체 프로젝트 누적 현황 파악
-3. 첫 `pending` phase의 `phases/{task}/index.json` 읽기
-4. 첫 `pending` phase의 `module-map.json` 읽기 (있으면)
-5. 첫 `pending` step의 `stepN.md` 읽기
-6. 작업 시작
+과거 phase 배치 실행기는 사용자가 명시적으로 선택하는 legacy 기능이다.
+스킬을 사용하거나 phase를 재개했다는 이유로 자동 호출하지 않는다. 관련 상세는 [LEGACY.md](LEGACY.md)에 있다.
+이 하네스는 기본 hook·권한·모델 설정을 변경하지 않는다.

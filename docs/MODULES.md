@@ -1,3 +1,8 @@
+# Legacy / optional module protocol
+
+이 문서는 기존 모듈 페르소나 프로젝트의 호환 참조다. 기본 흐름에서는 생성·동기화하지 않는다.
+새 작업은 `docs/HARNESS.md`와 `tasks/{task}.md`를 사용한다. 아래 절차는 명시적으로 선택한 프로젝트에만 적용한다.
+
 # Module Persona Framework
 
 이 문서는 하네스 프레임워크의 모듈-페르소나 레이어 규약이다.

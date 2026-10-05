@@ -3,7 +3,7 @@ from typing import Optional
 
 
 class SafetyFilter:
-    """프레임워크 레벨 위험 명령 필터."""
+    """Legacy best-effort command linter; not a sandbox or runtime security boundary."""
 
     DANGEROUS_PATTERNS = [
         (re.compile(r"rm\s+-rf\s+/"), "absolute path recursive deletion (rm -rf /)"),

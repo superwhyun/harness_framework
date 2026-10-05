@@ -133,14 +133,14 @@ class TestJsonHelpers:
 # ---------------------------------------------------------------------------
 
 class TestLoadGuardrails:
-    def test_loads_agents_md_and_docs(self, executor, tmp_project):
+    def test_loads_rules_without_unrelated_docs(self, executor, tmp_project):
         result = PromptBuilder.load_guardrails(
             Path(tmp_project), Path(tmp_project), executor._backend.guardrail_files
         )
         assert "# Shared Rules" in result
         assert "shared rule" in result
-        assert "# Architecture" in result
-        assert "# Guide" in result
+        assert "# Architecture" not in result
+        assert "# Guide" not in result
 
     def test_backend_guardrails(self, executor, tmp_project):
         # Claude 백엔드의 경우 CLAUDE.md를 로드해야 함
@@ -155,11 +155,13 @@ class TestLoadGuardrails:
 # ---------------------------------------------------------------------------
 
 class TestBuildStepContext:
-    def test_includes_completed_with_summary(self, phase_dir):
+    def test_includes_only_dependency_summaries(self, phase_dir):
         index = json.loads((phase_dir / "index.json").read_text())
-        result = PromptBuilder.build_step_context(index)
-        assert "Step 0 (setup): 프로젝트 초기화 완료" in result
-        assert "Step 1 (core): 핵심 로직 구현" in result
+        index["steps"][2]["depends_on"] = [1]
+        result = PromptBuilder.build_step_context(index, index["steps"][2])
+        assert "프로젝트 초기화 완료" not in result
+        assert "Step 1 (core, completed): 핵심 로직 구현" in result
+        assert "index.json" in result
 
 
 # ---------------------------------------------------------------------------

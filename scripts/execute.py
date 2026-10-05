@@ -20,6 +20,7 @@ def main():
     parser.add_argument("--root", help="Target project root; defaults to .harness/current_project")
     parser.add_argument("--backend", help="Backend name from harness.json or built-in defaults")
     parser.add_argument("--push", action="store_true", help="Push branch after completion")
+    parser.add_argument("--no-commit", action="store_true", help="Keep current branch and changes; do not commit or push")
     args = parser.parse_args()
 
     try:
@@ -29,14 +30,18 @@ def main():
         sys.exit(1)
 
     # StepExecutor는 이제 harness.executor 모듈에서 가져와 사용합니다.
-    executor = StepExecutor(
-        root=project_root,
-        phase_dir_name=args.phase_dir,
-        backend_name=args.backend,
-        auto_push=args.push,
-        framework_root=ROOT,
-    )
-    executor.run()
+    try:
+        executor = StepExecutor(
+            root=project_root,
+            phase_dir_name=args.phase_dir,
+            backend_name=args.backend,
+            auto_push=args.push,
+            auto_commit=not args.no_commit,
+            framework_root=ROOT,
+        )
+        executor.run()
+    except (OSError, ValueError, RuntimeError) as exc:
+        parser.exit(1, f"ERROR: {exc}\n")
 
 if __name__ == "__main__":
     main()

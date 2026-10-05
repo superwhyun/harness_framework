@@ -18,11 +18,11 @@ from harness.executor import StepExecutor
 HELP_CHECKS = {
     "claude": {
         "command": ["claude", "--help"],
-        "contains": ["--output-format", "-p, --print"],
+        "contains": ["--output-format", "-p, --print", "--permission-mode"],
     },
     "codex": {
         "command": ["codex", "exec", "--help"],
-        "contains": ["--json", "--dangerously-bypass-approvals-and-sandbox"],
+        "contains": ["--json", "--sandbox", "--dangerously-bypass-approvals-and-sandbox"],
     },
     "gemini": {
         "command": ["gemini", "--help"],
@@ -47,14 +47,26 @@ def available_backends() -> list[str]:
     return sorted(StepExecutor.DEFAULT_BACKENDS)
 
 
-def run_help_check(name: str, cwd: Path) -> list[str]:
+def run_help_check(name: str, cwd: Path, *, skip_unavailable: bool = False) -> list[str]:
     errors = []
     spec = HELP_CHECKS[name]
     binary = spec["command"][0]
     if shutil.which(binary) is None:
+        if skip_unavailable:
+            print(f"SKIP {name}: binary '{binary}' not installed")
+            return []
         return [f"{name}: binary '{binary}' not found on PATH"]
 
-    result = subprocess.run(spec["command"], cwd=cwd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(spec["command"], cwd=cwd, capture_output=True, text=True, timeout=15)
+    except FileNotFoundError as exc:
+        # which() also finds scripts whose shebang interpreter was removed.
+        if skip_unavailable:
+            print(f"SKIP {name}: binary or its interpreter is unavailable")
+            return []
+        return [f"{name}: cannot launch binary or its interpreter: {exc}"]
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return [f"{name}: help command could not complete: {exc}"]
     output = result.stdout + result.stderr
     if result.returncode != 0:
         errors.append(f"{name}: help command failed with exit code {result.returncode}")
@@ -75,7 +87,7 @@ def main():
     cwd = Path(__file__).resolve().parent.parent
     errors = []
     for backend in backends:
-        errors.extend(run_help_check(backend, cwd))
+        errors.extend(run_help_check(backend, cwd, skip_unavailable=args.backend is None))
 
     if errors:
         print("Backend smoke check failed:")
@@ -83,7 +95,7 @@ def main():
             print(f"- {error}")
         sys.exit(1)
 
-    print("Backend smoke check passed")
+    print("Backend smoke check passed for available CLIs (help only; no model calls)")
 
 
 if __name__ == "__main__":
