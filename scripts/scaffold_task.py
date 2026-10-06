@@ -31,7 +31,7 @@ def scaffold_task(root: Path, name: str, units=None) -> Path:
 - 범위와 결과물:
 - 선행 단위: {dependency}
 - 완료 조건:
-- 검증 방법:
+- 검증 방법(실행 명령·관찰):
 - 검증 결과: 미실행
 - 구현 요약·남은 문제:
 """)

@@ -1,5 +1,18 @@
 # Lightweight Harness Framework
 
+> **⚠️ 폐기됨 (2026-10-07)**
+>
+> Claude Code·Codex·Antigravity에 `/goal` 명령이 도입된 이후 이 프로젝트는 더 이상 의미가 없어 폐기한다.
+> 이 하네스가 제공하던 "완료 조건까지 단위별로 구현·검증을 반복하는 실행 루프"는 `/goal`이,
+> 계획 수립은 각 도구의 plan mode·`/plan`이 대체한다. 남은 가치인 작업 기록은 프레임워크 없이
+> 대상 저장소의 `AGENTS.md` 규칙과 plain Markdown task 문서만으로 충분하다.
+>
+> 대신 이렇게 사용한다: plan mode로 단위·완료 조건을 확정한 뒤
+> `/goal <결과> 완료: <검증 명령 출력 통과> 제약: <수정 범위·테스트 삭제/skip 금지> 막히면: <멈춤 조건>`.
+> `/goal`과 함께 쓰는 마지막 정리는 [docs/HARNESS.md](docs/HARNESS.md)의 "/goal과 함께 쓰기"에 있다.
+>
+> 저장소는 기록용으로만 보존하며 더 이상 유지보수하지 않는다.
+
 Codex, Claude Code, Gemini CLI, Kimi Code CLI가 작업을 이어받을 수 있도록 하는 가벼운 프로젝트 규칙과 작업 기록 템플릿이다.
 탐색·설계·편집·검증은 현재 Claude·Codex 등의 세션에서 수행한다. 하네스는 명시적 실행 단위와 재개 기록을 제공하며 별도의 모델 CLI를 호출하지 않는다.
 
